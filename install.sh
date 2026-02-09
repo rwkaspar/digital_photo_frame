@@ -37,7 +37,7 @@ sudo apt-get install -y python3 python3-pip
 
 # Install Python dependencies
 echo "Installing Python dependencies..."
-pip3 install -r "$INSTALL_DIR/requirements.txt"
+python3 -m pip install -r "$INSTALL_DIR/requirements.txt"
 
 # Setup systemd service
 echo "Setting up systemd service..."

@@ -176,9 +176,6 @@ class PhotoFrame:
         fps = 30
         steps = int(self.fade_duration * fps)
         
-        # Create a copy of new surface for alpha blending
-        new_surf_copy = new_surface.copy()
-        
         for i in range(steps + 1):
             alpha = int((i / steps) * 255)
             
@@ -191,12 +188,13 @@ class PhotoFrame:
             old_y = (self.height - old_rect.height) // 2
             self.screen.blit(old_surface, (old_x, old_y))
             
-            # Draw new image with alpha
-            new_surf_copy.set_alpha(alpha)
-            new_rect = new_surf_copy.get_rect()
+            # Draw new image with alpha (create fresh copy each iteration)
+            new_surf_alpha = new_surface.copy()
+            new_surf_alpha.set_alpha(alpha)
+            new_rect = new_surf_alpha.get_rect()
             new_x = (self.width - new_rect.width) // 2
             new_y = (self.height - new_rect.height) // 2
-            self.screen.blit(new_surf_copy, (new_x, new_y))
+            self.screen.blit(new_surf_alpha, (new_x, new_y))
             
             pygame.display.flip()
             
