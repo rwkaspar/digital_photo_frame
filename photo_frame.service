@@ -1,0 +1,16 @@
+[Unit]
+Description=Digital Photo Frame
+After=network.target graphical.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/digital_photo_frame
+Environment="DISPLAY=:0"
+Environment="XAUTHORITY=/home/pi/.Xauthority"
+ExecStart=/usr/bin/python3 /home/pi/digital_photo_frame/photo_frame.py /home/pi/digital_photo_frame/config.yaml
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=graphical.target

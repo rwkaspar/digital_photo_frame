@@ -1,0 +1,40 @@
+# Digital Photo Frame Configuration
+
+# Display settings
+display:
+  fullscreen: true
+  # Width and height are used only if fullscreen is false
+  width: 800
+  height: 600
+
+# Slideshow settings
+slideshow:
+  # Time in seconds between images
+  interval: 10
+  # Shuffle image order
+  shuffle: true
+  # Transition effect: 'fade' or 'none'
+  transition: fade
+  # Fade transition duration in seconds
+  fade_duration: 1.0
+
+# Image settings
+images:
+  # Directory containing images
+  directory: ./images
+  # Search subdirectories recursively
+  recursive: true
+  # Supported image extensions
+  extensions:
+    - .jpg
+    - .jpeg
+    - .png
+    - .bmp
+    - .gif
+
+# Logging settings
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: INFO
+  # Log file path
+  file: photo_frame.log
