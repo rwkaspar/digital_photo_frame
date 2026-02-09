@@ -243,7 +243,7 @@ class PhotoDatabase:
         cursor = self.conn.cursor()
         
         # Get all eligible items with their weights
-        current_week = datetime.now().strftime('%Y-W%W')
+        current_week = datetime.now().strftime('%G-W%V')  # ISO week format
         cursor.execute('''
             SELECT item_id, times_shown, last_shown_week
             FROM items
@@ -296,7 +296,7 @@ class PhotoDatabase:
     def mark_shown(self, item_ids: List[int]):
         """Mark items as shown in current week."""
         cursor = self.conn.cursor()
-        current_week = datetime.now().strftime('%Y-W%W')
+        current_week = datetime.now().strftime('%G-W%V')  # ISO week format
         now_ts = int(time.time())
         
         for item_id in item_ids:

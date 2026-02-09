@@ -7,10 +7,12 @@ Serves the viewer HTML and generates a JSON list of photos.
 import os
 import json
 import logging
+import subprocess
+import threading
+import time
 from pathlib import Path
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-import subprocess
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -150,9 +152,7 @@ class PhotoFrameHandler(SimpleHTTPRequestHandler):
             self.wfile.write(b'Shutdown initiated')
             
             # Schedule shutdown (with delay to allow response to send)
-            import threading
             def delayed_shutdown():
-                import time
                 time.sleep(2)
                 subprocess.run(['sudo', 'shutdown', '-h', 'now'])
             

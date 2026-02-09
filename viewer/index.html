@@ -173,8 +173,11 @@
                     throw new Error('No photos found');
                 }
 
-                // Shuffle photos
-                photos = photos.sort(() => Math.random() - 0.5);
+                // Shuffle photos using Fisher-Yates algorithm
+                for (let i = photos.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [photos[i], photos[j]] = [photos[j], photos[i]];
+                }
                 
                 document.getElementById('loading').style.display = 'none';
                 startSlideshow();
@@ -241,9 +244,12 @@
                 // Move to next photo
                 currentIndex = (currentIndex + 1) % photos.length;
 
-                // If we've cycled through all photos, reshuffle
+                // If we've cycled through all photos, reshuffle using Fisher-Yates
                 if (currentIndex === 0) {
-                    photos = photos.sort(() => Math.random() - 0.5);
+                    for (let i = photos.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [photos[i], photos[j]] = [photos[j], photos[i]];
+                    }
                 }
 
             } catch (error) {
