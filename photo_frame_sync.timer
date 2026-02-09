@@ -1,0 +1,13 @@
+[Unit]
+Description=Digital Photo Frame Sync Timer
+Requires=photo_frame_sync.service
+
+[Timer]
+# Run weekly on Monday at 3 AM
+OnCalendar=Mon *-*-* 03:00:00
+# Also run 5 minutes after boot
+OnBootSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

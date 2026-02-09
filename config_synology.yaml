@@ -1,0 +1,61 @@
+# Digital Photo Frame with Synology Photos Integration
+# Configuration file
+
+# Synology Photos Settings
+synology:
+  # Public share URL (e.g., https://photos.kaspar-family.org/mo/sharing/9kP51m3VS)
+  share_url: ""
+  # Password for the shared album
+  share_passphrase: ""
+  # Base URL for the Synology Photos instance
+  base_url: "https://photos.kaspar-family.org"
+
+# Sync Settings
+sync:
+  # Number of photos to select each week
+  photos_per_week: 200
+  # Include videos in selection (false for now)
+  include_videos: false
+  # Maximum times a photo can be shown before cooldown
+  max_show_count: 10
+  # API pagination limit
+  page_limit: 100
+  # Local storage path for downloaded photos
+  photos_dir: "/srv/frame/photos"
+  # State database path
+  state_db: "/srv/frame/state.db"
+
+# Slideshow Settings
+slideshow:
+  # Time between photos in seconds
+  interval: 10
+  # Transition effect (fade, none)
+  transition: "fade"
+  # Fade duration in seconds
+  fade_duration: 1.0
+  # Fullscreen mode
+  fullscreen: true
+  # Hot corner size in pixels (for shutdown)
+  hot_corner_size: 50
+  # Hot corner position (top-left, top-right, bottom-left, bottom-right)
+  hot_corner_position: "top-left"
+
+# System Settings
+system:
+  # Enable autostart on boot
+  autostart: true
+  # Sync schedule (cron format or "weekly")
+  sync_schedule: "weekly"
+  # Day of week for sync (0=Monday, 6=Sunday)
+  sync_day: 0
+  # Hour for sync (0-23)
+  sync_hour: 3
+  # Chromium path
+  chromium_path: "/usr/bin/chromium-browser"
+  # Viewer URL (local file or http)
+  viewer_url: "file:///srv/frame/viewer/index.html"
+
+# Logging
+logging:
+  level: "INFO"
+  file: "/var/log/photo_frame.log"

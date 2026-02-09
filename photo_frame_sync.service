@@ -1,0 +1,15 @@
+[Unit]
+Description=Digital Photo Frame Sync Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi/digital_photo_frame
+ExecStart=/usr/bin/python3 /home/pi/digital_photo_frame/sync_photos.py /home/pi/digital_photo_frame/config_synology.yaml
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
