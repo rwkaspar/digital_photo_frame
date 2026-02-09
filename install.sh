@@ -33,7 +33,7 @@ cp requirements.txt "$INSTALL_DIR/"
 # Install system dependencies
 echo "Installing system dependencies..."
 sudo apt-get update
-sudo apt-get install -y python3 python3-pip python3-pygame
+sudo apt-get install -y python3 python3-pip
 
 # Install Python dependencies
 echo "Installing Python dependencies..."

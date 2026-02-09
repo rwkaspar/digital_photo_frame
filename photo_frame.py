@@ -176,14 +176,29 @@ class PhotoFrame:
         fps = 30
         steps = int(self.fade_duration * fps)
         
+        # Create a copy of new surface for alpha blending
+        new_surf_copy = new_surface.copy()
+        
         for i in range(steps + 1):
             alpha = int((i / steps) * 255)
             
-            # Draw old image at full opacity
-            self._draw_image(old_surface, 255)
+            # Fill screen with black
+            self.screen.fill((0, 0, 0))
             
-            # Draw new image with increasing alpha
-            self._draw_image(new_surface, alpha)
+            # Draw old image
+            old_rect = old_surface.get_rect()
+            old_x = (self.width - old_rect.width) // 2
+            old_y = (self.height - old_rect.height) // 2
+            self.screen.blit(old_surface, (old_x, old_y))
+            
+            # Draw new image with alpha
+            new_surf_copy.set_alpha(alpha)
+            new_rect = new_surf_copy.get_rect()
+            new_x = (self.width - new_rect.width) // 2
+            new_y = (self.height - new_rect.height) // 2
+            self.screen.blit(new_surf_copy, (new_x, new_y))
+            
+            pygame.display.flip()
             
             # Check for quit events during transition
             for event in pygame.event.get():
