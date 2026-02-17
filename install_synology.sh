@@ -41,11 +41,18 @@ sudo chown -R $USER:$USER /srv/frame
 # Install system dependencies
 echo "Installing system dependencies..."
 sudo apt-get update
-sudo apt-get install -y python3 python3-pip chromium-browser
+sudo apt-get install -y python3 python3-venv chromium-browser
 
-# Install Python dependencies
-echo "Installing Python dependencies..."
-python3 -m pip install -r "$INSTALL_DIR/requirements.txt"
+# Create Python virtual environment
+echo "Creating Python virtual environment..."
+python3 -m venv "$INSTALL_DIR/venv"
+
+# Install Python dependencies in venv
+echo "Installing Python dependencies in venv..."
+"$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
+
+# Set config file permissions
+chmod 600 "$INSTALL_DIR/config_synology.yaml"
 
 # Setup systemd services
 echo "Setting up systemd services..."
@@ -76,7 +83,7 @@ echo "=== Initial Sync ==="
 echo
 echo "After configuring, run the initial sync:"
 echo "  cd $INSTALL_DIR"
-echo "  python3 sync_photos.py config_synology.yaml"
+echo "  ./venv/bin/python sync_photos.py config_synology.yaml"
 echo
 echo "=== Enable Services ==="
 echo
@@ -105,10 +112,10 @@ echo
 echo "=== Manual Testing ==="
 echo
 echo "Test the sync:"
-echo "  cd $INSTALL_DIR && python3 sync_photos.py config_synology.yaml"
+echo "  cd $INSTALL_DIR && ./venv/bin/python sync_photos.py config_synology.yaml"
 echo
 echo "Test the server:"
-echo "  cd $INSTALL_DIR && python3 viewer_server.py config_synology.yaml"
-echo "  Then open http://localhost:8080 in a browser"
+echo "  cd $INSTALL_DIR && ./venv/bin/python viewer_server.py config_synology.yaml"
+echo "  Then open http://localhost:8000 in a browser"
 echo
 echo "=== Installation Complete ==="

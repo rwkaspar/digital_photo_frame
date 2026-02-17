@@ -187,7 +187,7 @@ journalctl -u photo_frame_viewer.service -f
 │  │  viewer_server.py (systemd service)                  │  │
 │  │  - HTTP server on port 8080                          │  │
 │  │  - Serves viewer HTML                                │  │
-│  │  - Generates /photos.json                            │  │
+│  │  - Generates /list                            │  │
 │  │  - Serves photo files                                │  │
 │  └──────────────────────────────────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────────┐  │
@@ -214,7 +214,7 @@ journalctl -u photo_frame_viewer.service -f
 ### Viewer
 
 - Pure HTML/CSS/JavaScript slideshow
-- Loads photo list from `/photos.json` endpoint
+- Loads photo list from `/list` endpoint
 - Preloads images for smooth transitions
 - CSS fade transitions between photos
 - Wake Lock API to prevent screen sleep
@@ -320,7 +320,7 @@ python3 viewer_server.py config_synology.yaml
 
 3. Check if port 8080 is accessible:
 ```bash
-curl http://localhost:8080/photos.json
+curl http://localhost:8080/list
 ```
 
 ### Chromium Kiosk Issues

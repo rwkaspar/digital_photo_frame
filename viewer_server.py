@@ -34,7 +34,7 @@ class PhotoFrameHandler(SimpleHTTPRequestHandler):
         if path == '/' or path == '/index.html':
             # Serve viewer HTML
             self.serve_viewer()
-        elif path == '/photos.json':
+        elif path == '/list':
             # Serve photos list as JSON
             self.serve_photos_json()
         elif path.startswith('/photos/'):
@@ -190,7 +190,7 @@ def main():
         
         photos_dir = config['sync']['photos_dir']
         viewer_dir = str(Path(__file__).parent / 'viewer')
-        port = int(os.environ.get('PORT', 8080))
+        port = int(os.environ.get('PORT', 8000))
         
         # Ensure directories exist
         Path(photos_dir).mkdir(parents=True, exist_ok=True)
