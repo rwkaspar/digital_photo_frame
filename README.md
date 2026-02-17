@@ -31,15 +31,16 @@ A Python-based digital photo frame application designed for Raspberry Pi Zero 2 
 
 ### Quick Install
 
-0. Preperation
-update system
+0. Preparation
+
+- update system
 ```bash
 sudo apt-get update
 sudo apt-get upgrade -y
 ```
-install git
+- install git
 ```bash
-sudo apt-get install git
+sudo apt-get install git -y
 ```
 
 2. Clone this repository to your Raspberry Pi:
