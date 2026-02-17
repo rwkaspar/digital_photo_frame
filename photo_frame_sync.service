@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=oneshot
 User=pi
 WorkingDirectory=/home/pi/digital_photo_frame
-ExecStart=/usr/bin/python3 /home/pi/digital_photo_frame/sync_photos.py /home/pi/digital_photo_frame/config_synology.yaml
+ExecStart=/home/pi/digital_photo_frame/venv/bin/python /home/pi/digital_photo_frame/sync_photos.py /home/pi/digital_photo_frame/config_synology.yaml
 StandardOutput=journal
 StandardError=journal
 

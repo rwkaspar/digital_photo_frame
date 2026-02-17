@@ -6,8 +6,8 @@ After=network.target photo_frame_sync.service
 Type=simple
 User=pi
 WorkingDirectory=/home/pi/digital_photo_frame
-Environment="PORT=8080"
-ExecStart=/usr/bin/python3 /home/pi/digital_photo_frame/viewer_server.py /home/pi/digital_photo_frame/config_synology.yaml
+Environment="PORT=8000"
+ExecStart=/home/pi/digital_photo_frame/venv/bin/python /home/pi/digital_photo_frame/viewer_server.py /home/pi/digital_photo_frame/config_synology.yaml
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

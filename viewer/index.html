@@ -163,7 +163,7 @@
         // Load photos list
         async function loadPhotosList() {
             try {
-                const response = await fetch('/photos.json');
+                const response = await fetch('/list');
                 if (!response.ok) {
                     throw new Error('Failed to load photos list');
                 }
