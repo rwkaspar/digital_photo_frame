@@ -185,14 +185,14 @@ journalctl -u photo_frame_viewer.service -f
 │  └──────────────────────────────────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │  viewer_server.py (systemd service)                  │  │
-│  │  - HTTP server on port 8080                          │  │
+│  │  - HTTP server on port 8000                          │  │
 │  │  - Serves viewer HTML                                │  │
 │  │  - Generates /list                            │  │
 │  │  - Serves photo files                                │  │
 │  └──────────────────────────────────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │  Chromium Browser (kiosk mode)                       │  │
-│  │  - Loads viewer at http://localhost:8080             │  │
+│  │  - Loads viewer at http://localhost:8000             │  │
 │  │  - Fullscreen slideshow with fade transitions        │  │
 │  │  - Touch controls & hot corner                       │  │
 │  └──────────────────────────────────────────────────────┘  │
@@ -318,9 +318,9 @@ cd ~/digital_photo_frame
 python3 viewer_server.py config_synology.yaml
 ```
 
-3. Check if port 8080 is accessible:
+3. Check if port 8000 is accessible:
 ```bash
-curl http://localhost:8080/list
+curl http://localhost:8000/list
 ```
 
 ### Chromium Kiosk Issues
@@ -332,7 +332,7 @@ echo $DISPLAY  # Should be :0
 
 2. Test Chromium manually:
 ```bash
-DISPLAY=:0 chromium-browser --kiosk http://localhost:8080
+DISPLAY=:0 chromium-browser --kiosk http://localhost:8000
 ```
 
 3. Check viewer service logs:
@@ -408,7 +408,7 @@ ssh pi@photo-frame-hostname.tailnet
 
 3. Access viewer remotely:
 ```
-http://photo-frame-hostname.tailnet:8080
+http://photo-frame-hostname.tailnet:8000
 ```
 
 ## Advanced Usage
@@ -459,7 +459,7 @@ python3 sync_photos.py config_test.yaml
 Test viewer locally:
 ```bash
 python3 viewer_server.py config_test.yaml
-# Open http://localhost:8080 in browser
+# Open http://localhost:8000 in browser
 ```
 
 ## License
