@@ -31,7 +31,18 @@ A Python-based digital photo frame application designed for Raspberry Pi Zero 2 
 
 ### Quick Install
 
-1. Clone this repository to your Raspberry Pi:
+0. Preperation
+update system
+```bash
+sudo apt-get update
+sudo apt-get upgrade -y
+```
+install git
+```bash
+sudo apt-get install git
+```
+
+2. Clone this repository to your Raspberry Pi:
 ```bash
 git clone https://github.com/rwkaspar/digital_photo_frame.git
 cd digital_photo_frame
