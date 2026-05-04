@@ -68,6 +68,9 @@ def main():
     if app.wifi_manager.check_connectivity():
         logger.info("WiFi connected — normal mode")
         app.init_syncer()
+        if app.syncer:
+            logger.info("Triggering startup photo sync")
+            app.syncer.run_sync()
     else:
         logger.warning("No WiFi connectivity — starting hotspot")
         app.wifi_manager.start_hotspot()

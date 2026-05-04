@@ -58,6 +58,58 @@ show() {
 SCREEN
 }
 
+# ---- Desktop display manager conflict handling ----
+deactivate_display_manager() {
+    log "Checking for desktop display manager conflicts..."
+    local dm
+    local dm_candidates=(
+        "display-manager.service"
+        "lightdm.service"
+        "gdm.service"
+        "gdm3.service"
+        "sddm.service"
+        "lxdm.service"
+        "xdm.service"
+    )
+
+    for dm in "${dm_candidates[@]}"; do
+        if systemctl is-enabled "$dm" >/dev/null 2>&1 || systemctl is-active "$dm" >/dev/null 2>&1; then
+            log "Disabling conflicting service: ${dm}"
+            systemctl disable --now "$dm" 2>/dev/null || log "WARNING: could not disable ${dm}"
+        fi
+    done
+
+    if ! systemctl set-default multi-user.target >/dev/null 2>&1; then
+        log "WARNING: failed to set default target to multi-user.target"
+    else
+        log "Default target set to multi-user.target (no desktop login on boot)."
+    fi
+}
+
+assert_no_display_manager_conflict() {
+    local dm
+    local active_dms=()
+    local dm_candidates=(
+        "display-manager.service"
+        "lightdm.service"
+        "gdm.service"
+        "gdm3.service"
+        "sddm.service"
+        "lxdm.service"
+        "xdm.service"
+    )
+
+    for dm in "${dm_candidates[@]}"; do
+        if systemctl is-active "$dm" >/dev/null 2>&1; then
+            active_dms+=("$dm")
+        fi
+    done
+
+    if [ "${#active_dms[@]}" -gt 0 ]; then
+        die "desktop display manager still active (${active_dms[*]}). This blocks DRM/seat0 for photo_frame_cage. Disable it (e.g. sudo systemctl disable --now lightdm) and rerun setup."
+    fi
+}
+
 # ---- Check internet (needed for apt-get) ----
 if ping -c 1 -W 2 8.8.8.8 &>/dev/null; then
     log "Internet already available, skipping network wait."
@@ -275,6 +327,7 @@ cat > /etc/systemd/system/photo_frame_cage.service << EOF
 Description=Digital Photo Frame Viewer (labwc + Chromium)
 After=network.target photo_frame_server.service
 Wants=photo_frame_server.service
+Conflicts=display-manager.service
 
 [Service]
 Type=simple
@@ -375,6 +428,10 @@ fi
 
 # Disable login prompt on tty1 (permanently)
 systemctl disable getty@tty1 2>/dev/null || true
+
+# Disable desktop display managers that would otherwise take DRM/seat0.
+deactivate_display_manager
+assert_no_display_manager_conflict
 
 # ---- Enable services ----
 show "Almost done..."

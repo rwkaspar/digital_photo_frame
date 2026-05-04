@@ -8,11 +8,19 @@ set -e
 REPO_DIR="$HOME/digital_photo_frame"
 cd "$REPO_DIR"
 
+# Resolve tracked upstream (fallback origin/main)
+UPSTREAM_REF="$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo origin/main)"
+REMOTE="${UPSTREAM_REF%%/*}"
+BRANCH="${UPSTREAM_REF#*/}"
+
 echo "=== Updating Photo Frame ==="
 
+echo "Tracking: $UPSTREAM_REF"
+
 # 1. Discard any local modifications (CRLF diffs, etc.) and pull latest
-git reset --hard origin/main 2>/dev/null || true
-git pull --ff-only || { echo "git pull failed"; exit 1; }
+git fetch "$REMOTE" "$BRANCH" --quiet || true
+git reset --hard "$UPSTREAM_REF" 2>/dev/null || true
+git pull --ff-only "$REMOTE" "$BRANCH" || { echo "git pull failed"; exit 1; }
 echo "Code updated to $(git log -1 --format='%h %ci')"
 
 # 2. Patch config: add new fields if missing

@@ -36,6 +36,9 @@
             object-fit: contain;
             opacity: 0;
             transition: opacity 1s ease-in-out;
+            will-change: opacity, transform;
+            backface-visibility: hidden;
+            transform: translate3d(0, 0, 0);
         }
 
         .photo.active {
@@ -46,6 +49,11 @@
         .photo.previous {
             opacity: 0;
             z-index: 0;
+        }
+
+        @keyframes kenburnsPan {
+            0% { transform: scale(1.08) translate(1.2%, 0.8%); }
+            100% { transform: scale(1.0) translate(0%, 0%); }
         }
 
         #hot-corner {
@@ -173,7 +181,7 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
+            justify-content: flex-start;
             overflow-y: auto;
         }
 
@@ -666,6 +674,27 @@
                     <span class="brightness-value" id="brightness-value">100%</span>
                     <button class="auto-btn" id="auto-brightness-btn" onclick="toggleAutoBrightness()">Auto</button>
                 </div>
+                <div class="settings-section-title" id="monitor-brightness-title" style="margin-top:16px;">Monitor Brightness</div>
+                <div class="brightness-control">
+                    <input type="range" id="monitor-brightness-slider" min="0" max="100" value="100"
+                           oninput="setMonitorBrightness(this.value)">
+                    <span class="brightness-value" id="monitor-brightness-value">--</span>
+                </div>
+                <div class="settings-section-title" id="ha-auto-title" style="margin-top:16px;">HA Auto Brightness</div>
+                <div class="brightness-control" style="margin-bottom:10px;">
+                    <button class="auto-btn" id="ha-auto-btn" onclick="toggleHAAutoBrightness()">Off</button>
+                    <span class="brightness-value" id="ha-auto-state">Manual</span>
+                </div>
+                <div class="settings-section-title" id="ha-min-title" style="font-size:16px;color:#999;">Min Brightness</div>
+                <div class="brightness-control">
+                    <input type="range" id="ha-min-slider" min="0" max="100" value="0" oninput="setHABrightnessBound('min', this.value)">
+                    <span class="brightness-value" id="ha-min-value">0%</span>
+                </div>
+                <div class="settings-section-title" id="ha-max-title" style="font-size:16px;color:#999;margin-top:10px;">Max Brightness</div>
+                <div class="brightness-control">
+                    <input type="range" id="ha-max-slider" min="0" max="100" value="100" oninput="setHABrightnessBound('max', this.value)">
+                    <span class="brightness-value" id="ha-max-value">100%</span>
+                </div>
             </div>
             <div class="settings-section">
                 <div class="settings-section-title" id="interval-title">Interval</div>
@@ -678,6 +707,29 @@
                         </div>
                     </div>
                     <span style="color:#888;font-size:16px">s</span>
+                </div>
+            </div>
+            <div class="settings-section">
+                <div class="settings-section-title" id="fade-title">Fade Duration</div>
+                <div class="schedule-control">
+                    <div class="time-picker">
+                        <div class="time-digit">
+                            <button class="time-btn" onclick="adjustFadeDuration(0.1)">+</button>
+                            <span class="time-val" id="fade-val">1.0</span>
+                            <button class="time-btn" onclick="adjustFadeDuration(-0.1)">-</button>
+                        </div>
+                    </div>
+                    <span style="color:#888;font-size:16px">s</span>
+                </div>
+            </div>
+            <div class="settings-section">
+                <div class="settings-section-title" id="transition-title">Transition</div>
+                <div class="orientation-control">
+                    <button class="orient-btn" id="transition-fade" onclick="setTransition('fade')">Fade</button>
+                    <button class="orient-btn" id="transition-cut" onclick="setTransition('cut')">Cut</button>
+                    <button class="orient-btn" id="transition-slide" onclick="setTransition('slide')">Slide</button>
+                    <button class="orient-btn" id="transition-zoom" onclick="setTransition('zoom')">Zoom</button>
+                    <button class="orient-btn" id="transition-kenburns" onclick="setTransition('kenburns')">KenBurns</button>
                 </div>
             </div>
             <div class="settings-section">
@@ -756,6 +808,7 @@
                 </div>
             </div>
             <div class="settings-buttons">
+                <button class="settings-btn" id="display-apply-btn" onclick="applyDisplaySettings(true)">Apply + Reload</button>
                 <button class="settings-btn close-btn" onclick="showSettingsPage('main')">← Back</button>
             </div>
         </div>
@@ -872,6 +925,10 @@
                 horizontal: 'Horizontal',
                 vertical: 'Vertical',
                 brightness: 'Brightness',
+                monitor_brightness: 'Monitor Brightness',
+                ha_auto_brightness: 'HA Auto Brightness',
+                min_brightness: 'Min Brightness',
+                max_brightness: 'Max Brightness',
                 auto: 'Auto',
                 sleep: 'Sleep Mode',
                 sleep_active: 'Active',
@@ -893,7 +950,15 @@
                 sync_now: 'Sync Now',
                 confirm_sync: 'Start photo sync? The frame may become unresponsive until syncing is finished.',
                 interval: 'Interval',
+                fade_duration: 'Fade Duration',
+                transition: 'Transition',
+                apply_reload: 'Apply + Reload',
                 display: 'Display',
+                transition_fade: 'Fade',
+                transition_cut: 'Cut',
+                transition_slide: 'Slide',
+                transition_zoom: 'Zoom',
+                transition_kenburns: 'KenBurns',
                 back: '\u2190 Back',
                 edit: 'Edit',
                 cancel: 'Cancel',
@@ -933,6 +998,10 @@
                 horizontal: 'Horizontal',
                 vertical: 'Vertikal',
                 brightness: 'Helligkeit',
+                monitor_brightness: 'Monitor-Helligkeit',
+                ha_auto_brightness: 'HA Auto-Helligkeit',
+                min_brightness: 'Min Helligkeit',
+                max_brightness: 'Max Helligkeit',
                 auto: 'Auto',
                 sleep: 'Schlafmodus',
                 sleep_active: 'Aktiv',
@@ -954,7 +1023,15 @@
                 sync_now: 'Sync',
                 confirm_sync: 'Foto-Sync starten? Der Rahmen reagiert m\u00f6glicherweise nicht, bis die Synchronisierung abgeschlossen ist.',
                 interval: 'Intervall',
+                fade_duration: 'Blenddauer',
+                transition: 'Uebergang',
+                apply_reload: 'Anwenden + Neu laden',
                 display: 'Anzeige',
+                transition_fade: 'Blende',
+                transition_cut: 'Hart',
+                transition_slide: 'Schieben',
+                transition_zoom: 'Zoom',
+                transition_kenburns: 'KenBurns',
                 back: '\u2190 Zur\u00fcck',
                 edit: 'Bearbeiten',
                 cancel: 'Abbrechen',
@@ -1005,8 +1082,22 @@
             // Display page
             document.getElementById('display-title').textContent = t('display');
             document.getElementById('brightness-title').textContent = t('brightness');
+            document.getElementById('monitor-brightness-title').textContent = t('monitor_brightness');
+            document.getElementById('ha-auto-title').textContent = t('ha_auto_brightness');
+            document.getElementById('ha-min-title').textContent = t('min_brightness');
+            document.getElementById('ha-max-title').textContent = t('max_brightness');
             document.getElementById('auto-brightness-btn').textContent = t('auto');
+            updateHAAutoBrightnessUI();
+            updateAutoBrightnessUI();
             document.getElementById('interval-title').textContent = t('interval');
+            document.getElementById('fade-title').textContent = t('fade_duration');
+            document.getElementById('transition-title').textContent = t('transition');
+            document.getElementById('transition-fade').textContent = t('transition_fade');
+            document.getElementById('transition-cut').textContent = t('transition_cut');
+            document.getElementById('transition-slide').textContent = t('transition_slide');
+            document.getElementById('transition-zoom').textContent = t('transition_zoom');
+            document.getElementById('transition-kenburns').textContent = t('transition_kenburns');
+            document.getElementById('display-apply-btn').textContent = t('apply_reload');
             document.getElementById('sleep-title').textContent = t('sleep');
             var schedBtn = document.getElementById('schedule-btn');
             schedBtn.textContent = schedBtn.classList.contains('active') ? t('sleep_active') : t('sleep_inactive');
@@ -1027,7 +1118,7 @@
                 for (var i = 0; i < 7; i++) wdBtns[i].textContent = wdLabels[i];
             }
             var displayBtns = document.querySelectorAll('#settings-display .settings-buttons .settings-btn');
-            displayBtns[0].textContent = t('back');
+            displayBtns[1].textContent = t('back');
             // Albums page
             document.getElementById('albums-title').textContent = t('photo_albums');
             var albumBtns = document.querySelectorAll('#settings-albums .settings-buttons .settings-btn');
@@ -1067,6 +1158,10 @@
         let config = {
             interval: 300000,         // default 5 min (ms)
             fade_duration: 1.0,       // seconds
+            transition: 'fade',
+            ha_auto_enabled: false,
+            ha_auto_min: 0,
+            ha_auto_max: 100,
             hot_corner_size: 200,
         };
 
@@ -1077,6 +1172,70 @@
         let intervalId = null;
         let photoHistory = [];  // stack of previously shown indices
         let lastPhotoCount = 0; // track photo list changes
+
+        function stopSlideshowTimer() {
+            if (intervalId) {
+                clearInterval(intervalId);
+                intervalId = null;
+            }
+        }
+
+        function restartSlideshowTimer() {
+            stopSlideshowTimer();
+            intervalId = setInterval(showNextPhoto, config.interval);
+        }
+
+        function applyTransitionStyle() {
+            let style = document.getElementById('slideshow-transition-style');
+            if (!style) {
+                style = document.createElement('style');
+                style.id = 'slideshow-transition-style';
+                document.head.appendChild(style);
+            }
+            const fade = Math.max(0, Number(config.fade_duration) || 0).toFixed(1);
+            const kenburns = Math.max((config.interval || 10000) / 1000, 6).toFixed(1);
+            let css = `
+                #slideshow .photo {
+                    transition: opacity ${fade}s ease-in-out;
+                    transform: none;
+                    animation: none;
+                }
+                #slideshow.transition-cut .photo {
+                    transition: none !important;
+                }
+                #slideshow.transition-slide .photo {
+                    transition: opacity ${fade}s ease-in-out, transform ${fade}s ease-in-out;
+                    transform: translate3d(4%, 0, 0);
+                }
+                #slideshow.transition-slide .photo.active {
+                    transform: translate3d(0, 0, 0);
+                }
+                #slideshow.transition-slide .photo.previous {
+                    transform: translate3d(-4%, 0, 0);
+                }
+                #slideshow.transition-zoom .photo {
+                    transition: opacity ${fade}s ease-in-out, transform ${fade}s ease-in-out;
+                    transform: scale(1.02) translate3d(0, 0, 0);
+                }
+                #slideshow.transition-zoom .photo.active {
+                    transform: scale(1.0) translate3d(0, 0, 0);
+                }
+                #slideshow.transition-zoom .photo.previous {
+                    transform: scale(0.98) translate3d(0, 0, 0);
+                }
+                #slideshow.transition-kenburns .photo {
+                    transition: opacity ${fade}s ease-in-out;
+                    transform: scale(1.03) translate3d(0, 0, 0);
+                }
+                #slideshow.transition-kenburns .photo.active {
+                    animation: kenburnsPan ${kenburns}s ease-out both;
+                }
+            `;
+            style.textContent = css;
+            const slideshow = document.getElementById('slideshow');
+            slideshow.classList.remove('transition-fade', 'transition-cut', 'transition-slide', 'transition-zoom', 'transition-kenburns');
+            slideshow.classList.add(`transition-${config.transition}`);
+        }
 
         // --- Clock overlay ---
         let showClock = false;
@@ -1089,7 +1248,7 @@
             tl: { top: '24px', bottom: '', left: '32px', right: '' },
             tr: { top: '24px', bottom: '', left: '', right: '32px' },
             bl: { top: '', bottom: '24px', left: '32px', right: '' },
-            br: { top: '', bottom: '24px', left: '', right: '32px' }
+            br: { top: '', bottom: '0px', left: '', right: '51px' }
         };
 
         function setShowClock(on) {
@@ -1216,6 +1375,7 @@
         // Brightness control
         let autoBrightnessEnabled = localStorage.getItem('frame-auto-brightness') === 'true';
         let autoBrightnessInterval = null;
+        let monitorBrightnessTimer = null;
 
         function setBrightness(val) {
             const pct = parseInt(val);
@@ -1225,6 +1385,136 @@
             document.getElementById('brightness-value').textContent = pct + '%';
             document.getElementById('brightness-slider').value = pct;
             localStorage.setItem('frame-brightness', pct);
+        }
+
+        function updateMonitorBrightnessUI(pct, available = true) {
+            const slider = document.getElementById('monitor-brightness-slider');
+            const valueEl = document.getElementById('monitor-brightness-value');
+            if (!available) {
+                slider.disabled = true;
+                slider.style.opacity = '0.4';
+                valueEl.textContent = '--';
+                return;
+            }
+            slider.disabled = false;
+            slider.style.opacity = '1';
+            slider.value = pct;
+            valueEl.textContent = pct + '%';
+        }
+
+        async function loadMonitorBrightness() {
+            try {
+                const resp = await fetch('/api/monitor_brightness');
+                if (!resp.ok) {
+                    updateMonitorBrightnessUI(0, false);
+                    return;
+                }
+                const data = await resp.json();
+                if (!data.available || data.brightness == null) {
+                    updateMonitorBrightnessUI(0, false);
+                    return;
+                }
+                updateMonitorBrightnessUI(Math.max(0, Math.min(100, parseInt(data.brightness))), true);
+            } catch (e) {
+                updateMonitorBrightnessUI(0, false);
+            }
+        }
+
+        function setMonitorBrightness(val) {
+            const pct = Math.max(0, Math.min(100, parseInt(val)));
+            updateMonitorBrightnessUI(pct, true);
+            if (monitorBrightnessTimer) clearTimeout(monitorBrightnessTimer);
+            monitorBrightnessTimer = setTimeout(() => {
+                fetch('/api/monitor_brightness', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ brightness: pct })
+                }).catch(() => {});
+            }, 120);
+        }
+
+        let haAutoSaveTimer = null;
+
+        function updateHAAutoBrightnessUI() {
+            const btn = document.getElementById('ha-auto-btn');
+            const state = document.getElementById('ha-auto-state');
+            const minSlider = document.getElementById('ha-min-slider');
+            const maxSlider = document.getElementById('ha-max-slider');
+            const minVal = document.getElementById('ha-min-value');
+            const maxVal = document.getElementById('ha-max-value');
+            const monitorSlider = document.getElementById('monitor-brightness-slider');
+
+            minSlider.value = config.ha_auto_min;
+            maxSlider.value = config.ha_auto_max;
+            minVal.textContent = config.ha_auto_min + '%';
+            maxVal.textContent = config.ha_auto_max + '%';
+
+            btn.classList.toggle('active', !!config.ha_auto_enabled);
+            btn.textContent = config.ha_auto_enabled ? t('on') : t('off');
+            state.textContent = config.ha_auto_enabled ? 'HA' : 'Manual';
+
+            monitorSlider.disabled = !!config.ha_auto_enabled;
+            monitorSlider.style.opacity = config.ha_auto_enabled ? '0.4' : '1';
+        }
+
+        function queueSaveHAAutoBrightness() {
+            if (haAutoSaveTimer) clearTimeout(haAutoSaveTimer);
+            haAutoSaveTimer = setTimeout(saveHAAutoBrightnessSettings, 180);
+        }
+
+        async function saveHAAutoBrightnessSettings() {
+            try {
+                await fetch('/api/ha_brightness_settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        enabled: !!config.ha_auto_enabled,
+                        min_brightness: config.ha_auto_min,
+                        max_brightness: config.ha_auto_max,
+                    }),
+                });
+            } catch (e) {
+                console.error('Failed to save HA brightness settings:', e);
+            }
+        }
+
+        async function loadHAAutoBrightnessSettings() {
+            try {
+                const resp = await fetch('/api/ha_brightness_settings');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                if (!data.ok) return;
+                config.ha_auto_enabled = !!data.enabled;
+                config.ha_auto_min = Math.max(0, Math.min(100, parseInt(data.min_brightness ?? 0)));
+                config.ha_auto_max = Math.max(0, Math.min(100, parseInt(data.max_brightness ?? 100)));
+                if (config.ha_auto_min > config.ha_auto_max) {
+                    const t = config.ha_auto_min;
+                    config.ha_auto_min = config.ha_auto_max;
+                    config.ha_auto_max = t;
+                }
+                updateHAAutoBrightnessUI();
+            } catch (e) {
+                console.error('Failed to load HA brightness settings:', e);
+            }
+        }
+
+        function toggleHAAutoBrightness() {
+            config.ha_auto_enabled = !config.ha_auto_enabled;
+            updateHAAutoBrightnessUI();
+            queueSaveHAAutoBrightness();
+        }
+
+        function setHABrightnessBound(kind, val) {
+            let pct = parseInt(val);
+            if (!Number.isFinite(pct)) pct = 0;
+            pct = Math.max(0, Math.min(100, pct));
+            if (kind === 'min') {
+                config.ha_auto_min = Math.min(pct, config.ha_auto_max);
+            } else {
+                config.ha_auto_max = Math.max(pct, config.ha_auto_min);
+            }
+            updateHAAutoBrightnessUI();
+            queueSaveHAAutoBrightness();
         }
 
         function toggleAutoBrightness() {
@@ -1243,6 +1533,7 @@
         function updateAutoBrightnessUI() {
             const btn = document.getElementById('auto-brightness-btn');
             const slider = document.getElementById('brightness-slider');
+            btn.textContent = t('auto');
             if (autoBrightnessEnabled) {
                 btn.classList.add('active');
                 slider.disabled = true;
@@ -1418,7 +1709,7 @@
             showSettingsPage('main');
             overlay.classList.add('visible');
             // Pause slideshow
-            if (intervalId) clearInterval(intervalId);
+            stopSlideshowTimer();
 
             applyLanguage();
 
@@ -1426,9 +1717,13 @@
             const currentBrightness = localStorage.getItem('frame-brightness') || '100';
             document.getElementById('brightness-slider').value = currentBrightness;
             document.getElementById('brightness-value').textContent = currentBrightness + '%';
+            loadMonitorBrightness();
+            loadHAAutoBrightnessSettings();
             updateAutoBrightnessUI();
             loadOrientation();
             loadInterval();
+            loadFadeDuration();
+            setTransition(config.transition);
             loadSchedule();
             document.getElementById('clock-off').classList.toggle('active', !showClock);
             document.getElementById('clock-on').classList.toggle('active', showClock);
@@ -1531,7 +1826,7 @@
             document.getElementById('settings-overlay').classList.remove('visible');
             if (syncPollId) { clearInterval(syncPollId); syncPollId = null; }
             // Resume slideshow
-            intervalId = setInterval(showNextPhoto, config.interval);
+            restartSlideshowTimer();
         }
 
         function showPowerPopup() {
@@ -1604,6 +1899,52 @@
             document.getElementById('interval-val').textContent = Math.round(config.interval / 1000);
         }
 
+        function loadFadeDuration() {
+            document.getElementById('fade-val').textContent = config.fade_duration.toFixed(1);
+        }
+
+        function adjustFadeDuration(delta) {
+            let value = Math.round((config.fade_duration + delta) * 10) / 10;
+            if (value < 0.0) value = 0.0;
+            if (value > 5.0) value = 5.0;
+            config.fade_duration = value;
+            loadFadeDuration();
+            applyTransitionStyle();
+        }
+
+        function setTransition(mode) {
+            const allowed = ['fade', 'cut', 'slide', 'zoom', 'kenburns'];
+            config.transition = allowed.includes(mode) ? mode : 'fade';
+            document.getElementById('transition-fade').classList.toggle('active', config.transition === 'fade');
+            document.getElementById('transition-cut').classList.toggle('active', config.transition === 'cut');
+            document.getElementById('transition-slide').classList.toggle('active', config.transition === 'slide');
+            document.getElementById('transition-zoom').classList.toggle('active', config.transition === 'zoom');
+            document.getElementById('transition-kenburns').classList.toggle('active', config.transition === 'kenburns');
+            applyTransitionStyle();
+        }
+
+        async function applyDisplaySettings(reloadAfter = true) {
+            const payload = {
+                interval: Math.round(config.interval / 1000),
+                fade_duration: config.fade_duration,
+                transition: config.transition,
+            };
+            try {
+                const resp = await fetch('/api/slideshow_settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await resp.json();
+                if (!data.ok) throw new Error(data.error || 'save failed');
+                if (reloadAfter) {
+                    location.reload();
+                }
+            } catch (e) {
+                console.error('Failed to save display settings:', e);
+            }
+        }
+
         function adjustInterval(delta) {
             let secs = Math.round(config.interval / 1000) + delta;
             if (secs < 10) secs = 10;
@@ -1611,8 +1952,7 @@
             config.interval = secs * 1000;
             document.getElementById('interval-val').textContent = secs;
             // Restart slideshow timer with new interval
-            if (intervalId) clearInterval(intervalId);
-            intervalId = setInterval(showNextPhoto, config.interval);
+            restartSlideshowTimer();
             // Save to server
             fetch('/api/interval', {
                 method: 'POST',
@@ -1724,11 +2064,9 @@
                     const serverConfig = await cfgResp.json();
                     config.interval = (serverConfig.interval || 300) * 1000;
                     config.fade_duration = serverConfig.fade_duration || 1.0;
-                    // Apply fade duration to CSS
-                    document.querySelectorAll('.photo, style').forEach(() => {});
-                    const style = document.createElement('style');
-                    style.textContent = `.photo { transition: opacity ${config.fade_duration}s ease-in-out; }`;
-                    document.head.appendChild(style);
+                    config.transition = ['fade', 'cut', 'slide', 'zoom', 'kenburns'].includes(serverConfig.transition)
+                        ? serverConfig.transition : 'fade';
+                    applyTransitionStyle();
                 }
 
                 // Load photos list
@@ -1796,13 +2134,29 @@
         }
 
         let transitioning = false;
+        let nextPreload = { path: null, img: null, promise: null };
 
-        async function showPhoto(photoPath) {
+        function queueNextPreload() {
+            if (!photos.length) return;
+            const nextPath = photos[currentIndex];
+            if (!nextPath || nextPreload.path === nextPath) return;
+            nextPreload = {
+                path: nextPath,
+                img: null,
+                promise: preloadImage(nextPath)
+                    .then((img) => {
+                        if (nextPreload.path === nextPath) nextPreload.img = img;
+                        return img;
+                    })
+                    .catch(() => null),
+            };
+        }
+
+        async function showPhoto(photoPath, preloaded = null) {
             const slideshow = document.getElementById('slideshow');
             try {
-                await preloadImage(photoPath);
-                const newImage = document.createElement('img');
-                newImage.src = photoPath;
+                const loaded = preloaded || await preloadImage(photoPath);
+                const newImage = loaded;
                 newImage.className = 'photo';
                 slideshow.appendChild(newImage);
                 await new Promise(resolve => setTimeout(resolve, 50));
@@ -1828,7 +2182,10 @@
                 photoHistory.push(currentIndex);
                 if (photoHistory.length > 50) photoHistory.shift();
                 const photoPath = photos[currentIndex];
-                if (await showPhoto(photoPath)) {
+                const preloaded = (nextPreload.path === photoPath && nextPreload.promise)
+                    ? await nextPreload.promise
+                    : await preloadImage(photoPath);
+                if (await showPhoto(photoPath, preloaded)) {
                     currentIndex = (currentIndex + 1) % photos.length;
                     if (currentIndex === 0) {
                         for (let i = photos.length - 1; i > 0; i--) {
@@ -1836,8 +2193,10 @@
                             [photos[i], photos[j]] = [photos[j], photos[i]];
                         }
                     }
+                    queueNextPreload();
                 } else {
                     currentIndex = (currentIndex + 1) % photos.length;
+                    queueNextPreload();
                 }
             } finally {
                 transitioning = false;
@@ -1856,12 +2215,28 @@
             }
         }
 
+        function canManualNavigate() {
+            if (isSleeping) return false;
+            return !document.getElementById('settings-overlay').classList.contains('visible');
+        }
+
+        function manualNavigateByX(x) {
+            if (!canManualNavigate()) return;
+            if (x > window.innerWidth / 2) {
+                showNextPhoto();
+            } else {
+                showPrevPhoto();
+            }
+            restartSlideshowTimer();
+        }
+
         function startSlideshow() {
+            queueNextPreload();
             // Show first photo immediately
             showNextPhoto();
 
             // Then show next photos at interval
-            intervalId = setInterval(showNextPhoto, config.interval);
+            restartSlideshowTimer();
 
             // Periodically check for photo list changes (e.g. after sync)
             setInterval(refreshPhotoList, 60000);
@@ -1883,6 +2258,8 @@
                 }
                 currentIndex = 0;
                 photoHistory = [];
+                nextPreload = { path: null, img: null, promise: null };
+                queueNextPreload();
                 console.log('Photo list updated:', photos.length, 'photos');
             } catch (e) {}
         }
@@ -1892,9 +2269,15 @@
             if (e.key === 'Escape' || e.key === 'q' || e.key === 'Q') {
                 hotCorner.click();
             } else if (e.key === ' ' || e.key === 'ArrowRight') {
-                showNextPhoto();
+                if (canManualNavigate()) {
+                    showNextPhoto();
+                    restartSlideshowTimer();
+                }
             } else if (e.key === 'ArrowLeft') {
-                showPrevPhoto();
+                if (canManualNavigate()) {
+                    showPrevPhoto();
+                    restartSlideshowTimer();
+                }
             }
         });
 
@@ -1902,6 +2285,7 @@
         let touchStartX = null;
         let touchStartY = null;
         let touchStartTime = 0;
+        let lastTouchNavAt = 0;
 
         document.addEventListener('touchstart', (e) => {
             if (e.touches.length === 1) {
@@ -1924,13 +2308,25 @@
 
             // Only register horizontal swipes (X movement > Y movement)
             if (Math.abs(diffX) > 50 && Math.abs(diffX) > diffY) {
+                lastTouchNavAt = Date.now();
                 if (diffX > 0) {
-                    showNextPhoto();
+                    manualNavigateByX(window.innerWidth);
                 } else {
-                    showPrevPhoto();
+                    manualNavigateByX(0);
                 }
+            } else if (Math.abs(diffX) < 20 && diffY < 20 && elapsed < 500) {
+                // Tap navigation: left half = previous, right half = next
+                lastTouchNavAt = Date.now();
+                manualNavigateByX(touchEndX);
             }
             touchStartX = null;
+        });
+
+        document.addEventListener('click', (e) => {
+            if (Date.now() - lastTouchNavAt < 700) return;
+            if (!canManualNavigate()) return;
+            if (e.target.closest('#hot-corner') || e.target.closest('#sleep-overlay')) return;
+            manualNavigateByX(e.clientX);
         });
 
         // Sleep mode: poll server, show black overlay when sleeping
@@ -1959,12 +2355,12 @@
                         // Enter sleep
                         isSleeping = true;
                         sleepOverlay.classList.add('active');
-                        if (intervalId) clearInterval(intervalId);
+                        stopSlideshowTimer();
                     } else if (!data.sleeping && isSleeping) {
                         // Wake up
                         isSleeping = false;
                         sleepOverlay.classList.remove('active');
-                        intervalId = setInterval(showNextPhoto, config.interval);
+                        restartSlideshowTimer();
                     }
                 }
             } catch (e) {

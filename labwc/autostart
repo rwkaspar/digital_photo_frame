@@ -28,6 +28,8 @@ fi
     --no-first-run \
     --check-for-update-interval=31536000 \
     --disable-session-crashed-bubble \
+    --disable-renderer-backgrounding \
+    --disable-backgrounding-occluded-windows \
     --disable-features=TranslateUI \
     --disable-component-update \
     --disable-pinch \

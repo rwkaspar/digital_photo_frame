@@ -2,14 +2,15 @@
 Description=Digital Photo Frame Viewer (labwc + Chromium)
 After=network.target photo_frame_server.service
 Wants=photo_frame_server.service
+Conflicts=display-manager.service
 
 [Service]
 Type=simple
-User=robert
+User=frame_user
 SupplementaryGroups=video input render
 TTYPath=/dev/tty1
 Environment="XDG_RUNTIME_DIR=/tmp/frame-runtime"
-Environment="XDG_CONFIG_HOME=/home/robert/digital_photo_frame"
+Environment="XDG_CONFIG_HOME=/home/frame_user/digital_photo_frame"
 ExecStartPre=/bin/mkdir -p /tmp/frame-runtime
 ExecStartPre=/bin/chmod 700 /tmp/frame-runtime
 ExecStartPre=/bin/sleep 5
