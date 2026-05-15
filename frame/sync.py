@@ -4,6 +4,7 @@ import sys
 import time
 import shutil
 import logging
+import subprocess
 import threading
 from pathlib import Path
 from typing import Dict, Any
@@ -103,6 +104,7 @@ class PhotoSyncer:
 
     def _sync_worker(self):
         """Main sync logic — runs in background thread."""
+        cage_stopped_for_video = False
         synology_config = self._config.get('synology', {})
         photos_config = self._config.get('photos', {})
 
@@ -424,6 +426,18 @@ class PhotoSyncer:
                         download_path.unlink(missing_ok=True)
                         db.mark_failed(item_id)
                         continue
+                    # Free RAM for ffmpeg by stopping Chromium kiosk during
+                    # the first video transcode; restored at end of sync.
+                    if not cage_stopped_for_video:
+                        try:
+                            logger.info("Stopping cage to free RAM for video transcoding")
+                            subprocess.run(['sudo', 'systemctl', 'stop',
+                                            'photo_frame_cage'],
+                                           timeout=15, check=False)
+                            cage_stopped_for_video = True
+                            time.sleep(2)  # let memory settle
+                        except Exception as e:
+                            logger.warning(f"Failed to stop cage: {e}")
                     result = transcode_video_in_subprocess(
                         download_path, base_dir, item_id, filename,
                         h_size, v_size, blur_radius,
@@ -489,6 +503,14 @@ class PhotoSyncer:
             if tmp_dir.exists():
                 shutil.rmtree(tmp_dir, ignore_errors=True)
             db.close()
+            # Restart cage if we stopped it for video transcoding
+            if cage_stopped_for_video:
+                try:
+                    logger.info("Restarting cage after video transcoding")
+                    subprocess.run(['sudo', 'systemctl', 'start', 'photo_frame_cage'],
+                                   timeout=15, check=False)
+                except Exception as e:
+                    logger.warning(f"Failed to restart cage: {e}")
             with self._lock:
                 self._running = False
 
