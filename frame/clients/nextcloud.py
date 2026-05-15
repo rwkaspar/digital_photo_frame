@@ -31,6 +31,8 @@ IMAGE_TYPES = {
     'image/heic', 'image/heif', 'image/tiff', 'image/bmp',
 }
 
+IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif', '.tiff', '.bmp'}
+
 
 class NextcloudClient:
     """Client for Nextcloud public shared folders via WebDAV.
@@ -197,19 +199,23 @@ class NextcloudClient:
                     logger.warning(f"Failed to list subfolder {rel_path}: {e}")
                 continue
 
-            # Filter for image files
+            # Filter for image and video files
+            from frame.video import VIDEO_EXTENSIONS, is_video_mime
             content_type = entry.get('content_type', '')
             filename = entry.get('filename', '')
             ext = Path(filename).suffix.lower()
 
-            if content_type in IMAGE_TYPES or ext in {'.jpg', '.jpeg', '.png', '.gif',
-                                                       '.webp', '.heic', '.heif', '.tiff', '.bmp'}:
+            is_image = content_type in IMAGE_TYPES or ext in IMAGE_EXTS
+            is_video = is_video_mime(content_type) or ext in VIDEO_EXTENSIONS
+
+            if is_image or is_video:
                 file_id = entry.get('fileid') or entry.get('etag') or filename
                 items.append({
                     'id': f'nc_{file_id}',
                     'filename': filename,
                     'filesize': entry.get('size', 0),
                     '_webdav_path': entry['href'],
+                    'media_type': 'video' if is_video else 'photo',
                 })
 
         logger.info(f"Nextcloud: found {len(items)} photos in shared folder")

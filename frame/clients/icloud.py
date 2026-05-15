@@ -164,8 +164,7 @@ class ICloudSharedAlbumClient:
         download_map = self._sharedstreams_resolve_urls(all_photos)
         items = []
         for photo in all_photos:
-            if photo.get('mediaAssetType') == 'video':
-                continue
+            is_video = photo.get('mediaAssetType') == 'video'
             guid = photo.get('photoGuid', '')
             derivs = photo.get('derivatives', {})
             if not derivs:
@@ -175,18 +174,20 @@ class ICloudSharedAlbumClient:
             download_url = download_map.get(checksum, '')
             if not download_url:
                 continue
+            ext = 'mp4' if is_video else 'jpg'
             items.append({
                 'id': f'icl_{guid}',
-                'filename': f'icloud_{guid}.jpg',
+                'filename': f'icloud_{guid}.{ext}',
                 'filesize': int(best.get('fileSize', 0)),
                 '_download_url': download_url,
+                'media_type': 'video' if is_video else 'photo',
             })
-        logger.info(f"iCloud shared album: {len(items)} photos")
+        logger.info(f"iCloud shared album: {len(items)} items")
         return items
 
     def _sharedstreams_resolve_urls(self, photos: list) -> Dict[str, str]:
         url_map: Dict[str, str] = {}
-        guids = [p['photoGuid'] for p in photos if p.get('mediaAssetType') != 'video']
+        guids = [p['photoGuid'] for p in photos]
         for i in range(0, len(guids), 25):
             batch = guids[i:i + 25]
             try:
@@ -288,34 +289,39 @@ class ICloudSharedAlbumClient:
             fields = rec.get('fields', {})
             record_name = rec.get('recordName', '')
 
-            # Skip videos
             item_type = fields.get('itemType', {}).get('value', '')
-            if item_type.startswith('public.movie') or item_type.startswith('com.apple.quicktime'):
-                continue
+            is_video = (item_type.startswith('public.movie')
+                        or item_type.startswith('com.apple.quicktime'))
 
-            # Get original resolution asset
-            res_original = fields.get('resOriginalRes', {}).get('value', {})
-            download_url = res_original.get('downloadURL', '')
-            filesize = res_original.get('size', 0)
-
-            if not download_url:
-                # Fall back to JPEG medium
-                res_med = fields.get('resJPEGMedRes', {}).get('value', {})
-                download_url = res_med.get('downloadURL', '')
-                filesize = res_med.get('size', 0)
+            if is_video:
+                # Try video resolutions first
+                res_video = (fields.get('resOriginalVidComplRes', {}).get('value', {})
+                             or fields.get('resOriginalRes', {}).get('value', {}))
+                download_url = res_video.get('downloadURL', '')
+                filesize = res_video.get('size', 0)
+            else:
+                # Get original resolution asset
+                res_original = fields.get('resOriginalRes', {}).get('value', {})
+                download_url = res_original.get('downloadURL', '')
+                filesize = res_original.get('size', 0)
+                if not download_url:
+                    res_med = fields.get('resJPEGMedRes', {}).get('value', {})
+                    download_url = res_med.get('downloadURL', '')
+                    filesize = res_med.get('size', 0)
 
             if not download_url:
                 continue
 
             # Decode filename
+            default_ext = 'mov' if is_video else 'jpg'
             filename_enc = fields.get('filenameEnc', {}).get('value', '')
             if filename_enc:
                 try:
                     filename = base64.b64decode(filename_enc).decode('utf-8')
                 except Exception:
-                    filename = f'icloud_{record_name}.jpg'
+                    filename = f'icloud_{record_name}.{default_ext}'
             else:
-                filename = f'icloud_{record_name}.jpg'
+                filename = f'icloud_{record_name}.{default_ext}'
 
             # Sanitize record_name — CloudKit can include / and + in names
             safe_name = record_name.replace('/', '_').replace('+', '_')
@@ -324,9 +330,10 @@ class ICloudSharedAlbumClient:
                 'filename': filename,
                 'filesize': filesize,
                 '_download_url': download_url,
+                'media_type': 'video' if is_video else 'photo',
             })
 
-        logger.info(f"iCloud link: {len(items)} photos")
+        logger.info(f"iCloud link: {len(items)} items")
         return items
 
     # ── Public API (delegates to the right backend) ─────────────────

@@ -75,26 +75,42 @@ class GooglePhotosClient:
         if len(data_str) < 100:
             return []
 
-        # Extract lh3 photo URLs from the structured data.
-        # Each photo entry looks like: ["PHOTO_ID",["https://lh3...com/pw/HASH",WIDTH,HEIGHT,...
-        # We match the pattern: ,"[" or [" followed by https://lh3... inside the data arrays.
-        photo_pattern = r'\["([^"]{10,})",\["(https://lh3\.googleusercontent\.com/[^"]+)",(\d+),(\d+)'
-        matches = re.findall(photo_pattern, data_str)
+        # Extract lh3 photo/video URLs from the structured data.
+        # Each entry looks like: ["ID",["https://lh3...com/pw/HASH",WIDTH,HEIGHT,...
+        # Videos have a [null,DURATION_MS,...] block after the image metadata.
+        # We capture each entry's full preamble (~600 chars) to test for video markers.
+        entry_pattern = r'\["([^"]{10,})",\["(https://lh3\.googleusercontent\.com/[^"]+)",(\d+),(\d+)([^\[]{0,600})'
+        matches = re.findall(entry_pattern, data_str)
 
         items = []
         seen = set()
-        for photo_id, url, width, height in matches:
+        for photo_id, url, width, height, tail in matches:
             if url in seen:
                 continue
             seen.add(url)
+            # Heuristic: a video entry has a nested array with a duration value
+            # like [null,12345,...] (duration in ms) shortly after the image meta.
+            is_video = bool(re.search(r'\[null,\d{3,7},', tail))
             url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
-            items.append({
-                'id': f'gph_{url_hash}',
-                'filename': f'gphoto_{url_hash}.jpg',
-                '_download_url': url + '=w0',
-                '_width': int(width),
-                '_height': int(height),
-            })
+            if is_video:
+                # =dv yields the highest-res mp4 download (Google Photos video format)
+                items.append({
+                    'id': f'gph_{url_hash}',
+                    'filename': f'gphoto_{url_hash}.mp4',
+                    '_download_url': url + '=dv',
+                    '_width': int(width),
+                    '_height': int(height),
+                    'media_type': 'video',
+                })
+            else:
+                items.append({
+                    'id': f'gph_{url_hash}',
+                    'filename': f'gphoto_{url_hash}.jpg',
+                    '_download_url': url + '=w0',
+                    '_width': int(width),
+                    '_height': int(height),
+                    'media_type': 'photo',
+                })
 
         return items
 
@@ -109,6 +125,7 @@ class GooglePhotosClient:
                 'id': f'gph_{url_hash}',
                 'filename': f'gphoto_{url_hash}.jpg',
                 '_download_url': url + '=w0',
+                'media_type': 'photo',
             })
         return items
 

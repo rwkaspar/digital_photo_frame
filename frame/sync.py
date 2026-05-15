@@ -14,8 +14,21 @@ from frame.clients import (SynologyPhotosClient, GooglePhotosClient, ImmichClien
                             ICloudSharedAlbumClient, NextcloudClient)
 from frame.database import PhotoDatabase
 from frame.processing import process_photo_in_subprocess
+from frame.video import transcode_video_in_subprocess
 
 logger = logging.getLogger(__name__)
+
+
+def _list_media(orient_dir: Path):
+    """List all media files (photos + videos) in an orientation directory."""
+    if not orient_dir.exists():
+        return []
+    return list(orient_dir.glob('*.jpg')) + list(orient_dir.glob('*.mp4'))
+
+
+def _count_media(orient_dir: Path) -> int:
+    return len(_list_media(orient_dir))
+
 
 # Register HEIF opener if available
 try:
@@ -61,8 +74,8 @@ class PhotoSyncer:
             photos_config = self._config.get('photos', {})
             base_dir = Path(photos_config.get('base_dir', '/srv/frame/photos'))
 
-            h_count = len(list((base_dir / 'horizontal').glob('*.jpg'))) if (base_dir / 'horizontal').exists() else 0
-            v_count = len(list((base_dir / 'vertical').glob('*.jpg'))) if (base_dir / 'vertical').exists() else 0
+            h_count = _count_media(base_dir / 'horizontal')
+            v_count = _count_media(base_dir / 'vertical')
 
             status = {
                 'running': self._running,
@@ -105,6 +118,11 @@ class PhotoSyncer:
         blur_darken = photos_config.get('blur_darken', 0.6)
         quality = photos_config.get('quality', 85)
 
+        video_config = self._config.get('videos', {})
+        video_max_duration = video_config.get('max_duration', 120)
+        video_max_filesize_mb = video_config.get('max_filesize_mb', 100)
+        videos_enabled = video_config.get('enabled', True)
+
         # Ensure directories
         (base_dir / 'horizontal').mkdir(parents=True, exist_ok=True)
         (base_dir / 'vertical').mkdir(parents=True, exist_ok=True)
@@ -145,10 +163,10 @@ class PhotoSyncer:
             nc_albums = [(url, pw) for url, pw in zip(nc_urls, nc_passes) if url]
 
             if not syn_albums and not gph_urls and not imm_albums and not icl_urls and not nc_albums:
-                logger.info("No share URLs configured — cleaning photos, restoring defaults")
+                logger.info("No share URLs configured — cleaning media, restoring defaults")
                 for orient in ('horizontal', 'vertical'):
                     orient_dir = base_dir / orient
-                    for f in orient_dir.glob('*.jpg'):
+                    for f in _list_media(orient_dir):
                         if not f.name.startswith('default_'):
                             f.unlink(missing_ok=True)
                 db.clear_all()
@@ -279,11 +297,10 @@ class PhotoSyncer:
                     logger.error(f"Failed to fetch Nextcloud album {nc_idx + 1}: {e}")
 
             if not all_items:
-                logger.info("No photos found in any album — restoring defaults")
-                # Clean all real photos, restore defaults
+                logger.info("No items found in any album — restoring defaults")
                 for orient in ('horizontal', 'vertical'):
                     orient_dir = base_dir / orient
-                    for f in orient_dir.glob('*.jpg'):
+                    for f in _list_media(orient_dir):
                         if not f.name.startswith('default_'):
                             f.unlink(missing_ok=True)
                 self._restore_defaults(base_dir)
@@ -312,7 +329,7 @@ class PhotoSyncer:
             orientation = self._config.get('frame', {}).get('orientation', 'horizontal')
             other_orientation = 'vertical' if orientation == 'horizontal' else 'horizontal'
             other_dir = base_dir / other_orientation
-            other_count = len(list(other_dir.glob('*.jpg'))) if other_dir.exists() else 0
+            other_count = _count_media(other_dir)
             other_limit = 100
 
             logger.info(f"Sync orientation: {orientation} (other has {other_count}/{other_limit})")
@@ -400,11 +417,26 @@ class PhotoSyncer:
                     process_orientations.append(other_orientation)
                     other_count += 1
 
-                result = process_photo_in_subprocess(
-                    download_path, base_dir, item_id, filename,
-                    h_size, v_size, blur_radius, blur_darken, quality,
-                    orientations=tuple(process_orientations),
-                )
+                media_type = item.get('media_type', 'photo')
+                if media_type == 'video':
+                    if not videos_enabled:
+                        logger.info(f"Skipping video {filename}: videos disabled")
+                        download_path.unlink(missing_ok=True)
+                        db.mark_failed(item_id)
+                        continue
+                    result = transcode_video_in_subprocess(
+                        download_path, base_dir, item_id, filename,
+                        h_size, v_size, blur_radius,
+                        orientations=tuple(process_orientations),
+                        max_duration=video_max_duration,
+                        max_filesize_mb=video_max_filesize_mb,
+                    )
+                else:
+                    result = process_photo_in_subprocess(
+                        download_path, base_dir, item_id, filename,
+                        h_size, v_size, blur_radius, blur_darken, quality,
+                        orientations=tuple(process_orientations),
+                    )
 
                 download_path.unlink(missing_ok=True)
 
@@ -436,12 +468,12 @@ class PhotoSyncer:
             elapsed = time.time() - t_start
             logger.info(f"Sync done: {processed}/{total} new photos in {elapsed:.1f}s")
 
-            # Remove default placeholder photos once real photos exist
+            # Remove default placeholder photos once real media exists
             for orient in ('horizontal', 'vertical'):
                 orient_dir = base_dir / orient
-                real_photos = [f for f in orient_dir.glob('*.jpg')
-                               if not f.name.startswith('default_')]
-                if real_photos:
+                real_media = [f for f in _list_media(orient_dir)
+                              if not f.name.startswith('default_')]
+                if real_media:
                     for default_file in orient_dir.glob('default_*.jpg'):
                         default_file.unlink(missing_ok=True)
                         logger.info(f"Removed default placeholder: {default_file.name}")
@@ -472,11 +504,11 @@ class PhotoSyncer:
             orient_dir = base_dir / orient
             orient_dir.mkdir(parents=True, exist_ok=True)
 
-            # Count non-default photos
-            real_photos = [f for f in orient_dir.glob('*.jpg')
-                           if not f.name.startswith('default_')]
-            if real_photos:
-                continue  # Has real photos, skip
+            # Count non-default media
+            real_media = [f for f in _list_media(orient_dir)
+                          if not f.name.startswith('default_')]
+            if real_media:
+                continue  # Has real media, skip
 
             # Check if defaults already present
             existing_defaults = list(orient_dir.glob('default_*.jpg'))

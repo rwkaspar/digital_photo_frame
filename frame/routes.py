@@ -201,27 +201,28 @@ class PhotoFrameHandler(SimpleHTTPRequestHandler):
             return 'horizontal'
 
     def serve_photos_json(self):
-        """Serve list of photos as JSON (orientation-aware, with fallback)."""
+        """Serve list of photos+videos as JSON (orientation-aware, with fallback)."""
         try:
             orientation = self._get_orientation()
             photos_subdir = self.photos_dir / orientation
             fallback_orientation = 'vertical' if orientation == 'horizontal' else 'horizontal'
             fallback_subdir = self.photos_dir / fallback_orientation
 
-            photos = []
+            def _list_media_urls(subdir, orient):
+                if not subdir.exists():
+                    return []
+                files = list(subdir.glob('*.jpg')) + list(subdir.glob('*.mp4'))
+                return [f'/photos/{orient}/{p.name}' for p in files]
+
+            photos = _list_media_urls(photos_subdir, orientation)
             used_orientation = orientation
 
-            if photos_subdir.exists():
-                photos = [f'/photos/{orientation}/{p.name}'
-                          for p in photos_subdir.glob('*.jpg')]
-
             # Fall back to other orientation if target folder is empty
-            if not photos and fallback_subdir.exists():
-                photos = [f'/photos/{fallback_orientation}/{p.name}'
-                          for p in fallback_subdir.glob('*.jpg')]
+            if not photos:
+                photos = _list_media_urls(fallback_subdir, fallback_orientation)
                 used_orientation = fallback_orientation
                 if photos:
-                    logger.info(f"No {orientation} photos, falling back to {fallback_orientation}")
+                    logger.info(f"No {orientation} media, falling back to {fallback_orientation}")
 
             content = json.dumps(photos).encode('utf-8')
 
@@ -239,44 +240,86 @@ class PhotoFrameHandler(SimpleHTTPRequestHandler):
             self.send_error(500, str(e))
 
     def serve_photo(self, photo_name):
-        """Serve a photo file."""
+        """Serve a photo or video file (with Range support for videos)."""
         photo_path = self.photos_dir / photo_name
 
         if not photo_path.exists() or not photo_path.is_file():
             self.send_error(404, "Photo not found")
             return
 
-        # Security check: ensure photo is within photos_dir
+        # Security check: ensure file is within photos_dir
         try:
             photo_path.resolve().relative_to(self.photos_dir.resolve())
         except ValueError:
             self.send_error(403, "Forbidden")
             return
 
+        ext = photo_path.suffix.lower()
+        content_types = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.bmp': 'image/bmp',
+            '.mp4': 'video/mp4',
+            '.webm': 'video/webm',
+        }
+        content_type = content_types.get(ext, 'application/octet-stream')
+        file_size = photo_path.stat().st_size
+        is_video = content_type.startswith('video/')
+
         try:
-            with open(photo_path, 'rb') as f:
-                content = f.read()
+            range_header = self.headers.get('Range', '')
+            start, end = 0, file_size - 1
+            partial = False
 
-            ext = photo_path.suffix.lower()
-            content_types = {
-                '.jpg': 'image/jpeg',
-                '.jpeg': 'image/jpeg',
-                '.png': 'image/png',
-                '.gif': 'image/gif',
-                '.bmp': 'image/bmp'
-            }
-            content_type = content_types.get(ext, 'application/octet-stream')
+            if range_header.startswith('bytes='):
+                try:
+                    range_spec = range_header[6:].split(',', 1)[0]
+                    s, _, e = range_spec.partition('-')
+                    start = int(s) if s else 0
+                    end = int(e) if e else file_size - 1
+                    end = min(end, file_size - 1)
+                    if start > end or start >= file_size:
+                        self.send_response(416)
+                        self.send_header('Content-Range', f'bytes */{file_size}')
+                        self.end_headers()
+                        return
+                    partial = True
+                except ValueError:
+                    pass
 
-            self.send_response(200)
+            length = end - start + 1
+            status = 206 if partial else 200
+
+            self.send_response(status)
             self.send_header('Content-type', content_type)
-            self.send_header('Content-Length', len(content))
-            self.send_header('Cache-Control', 'public, max-age=3600')
+            self.send_header('Content-Length', str(length))
+            self.send_header('Accept-Ranges', 'bytes')
+            if partial:
+                self.send_header('Content-Range', f'bytes {start}-{end}/{file_size}')
+            self.send_header('Cache-Control', 'no-cache' if is_video else 'public, max-age=3600')
             self.end_headers()
-            self.wfile.write(content)
+
+            with open(photo_path, 'rb') as f:
+                f.seek(start)
+                remaining = length
+                while remaining > 0:
+                    chunk = f.read(min(64 * 1024, remaining))
+                    if not chunk:
+                        break
+                    try:
+                        self.wfile.write(chunk)
+                    except (BrokenPipeError, ConnectionResetError):
+                        return
+                    remaining -= len(chunk)
 
         except Exception as e:
-            logger.error(f"Error serving photo {photo_name}: {e}")
-            self.send_error(500, str(e))
+            logger.error(f"Error serving {photo_name}: {e}")
+            try:
+                self.send_error(500, str(e))
+            except Exception:
+                pass
 
     def serve_sysinfo(self):
         """Serve cached system info as JSON (updated every 30s in background)."""

@@ -57,10 +57,26 @@
             z-index: 1000;
             background: transparent;
             touch-action: none;
+            -webkit-tap-highlight-color: transparent;
         }
 
         #hot-corner.holding {
-            background: linear-gradient(to bottom left, rgba(255,255,255,0.15), transparent 70%);
+            background: linear-gradient(to bottom left, rgba(255,255,255,0.18), transparent 70%);
+        }
+
+        /* Always-visible faint corner hint so users know where to tap */
+        #hot-corner-hint {
+            position: fixed;
+            top: 6px;
+            right: 6px;
+            width: 28px;
+            height: 28px;
+            z-index: 999;
+            pointer-events: none;
+            border-top: 2px solid rgba(255,255,255,0.35);
+            border-right: 2px solid rgba(255,255,255,0.35);
+            border-top-right-radius: 4px;
+            opacity: 0.6;
         }
 
         #hot-corner-progress {
@@ -853,6 +869,7 @@
     <div id="sync-progress-bar"></div>
     <div id="hot-corner"></div>
     <div id="hot-corner-progress"></div>
+    <div id="hot-corner-hint"></div>
 
     <script>
         // --- i18n ---
@@ -1163,17 +1180,19 @@
             startClock();
         }
 
-        // Setup hot corner - 3 second hold to open settings
+        // Setup hot corner - hold to open settings
         const hotCorner = document.getElementById('hot-corner');
         const hotCornerProgress = document.getElementById('hot-corner-progress');
         let holdTimer = null;
         let holdAnimFrame = null;
         let holdStartTime = null;
-        const HOLD_DURATION = 3000;
+        let activePointerId = null;
+        const HOLD_DURATION = 1500;
 
         function startHold(e) {
-            e.preventDefault();
-            e.stopPropagation();
+            if (e && e.preventDefault) e.preventDefault();
+            if (e && e.stopPropagation) e.stopPropagation();
+            if (holdStartTime) return;  // already holding
             holdStartTime = Date.now();
             hotCorner.classList.add('holding');
             hotCornerProgress.classList.add('active');
@@ -1198,20 +1217,37 @@
             if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
             if (holdAnimFrame) { cancelAnimationFrame(holdAnimFrame); holdAnimFrame = null; }
             holdStartTime = null;
+            activePointerId = null;
             hotCorner.classList.remove('holding');
             hotCornerProgress.classList.remove('active');
             hotCornerProgress.style.setProperty('--progress', '0%');
         }
 
-        // Touch: start hold, cancel only on touchend/touchcancel (NOT touchmove)
-        hotCorner.addEventListener('touchstart', startHold, { passive: false });
-        hotCorner.addEventListener('touchend', (e) => { e.preventDefault(); cancelHold(); });
-        hotCorner.addEventListener('touchcancel', cancelHold);
-
-        // Mouse fallback
-        hotCorner.addEventListener('mousedown', startHold);
-        hotCorner.addEventListener('mouseup', cancelHold);
-        hotCorner.addEventListener('mouseleave', cancelHold);
+        // Pointer Events: unified handling of touch + mouse + stylus.
+        // Some Wayland/Chromium touchscreens don't deliver consistent
+        // touchstart/touchend pairs but DO deliver pointer events reliably.
+        if (window.PointerEvent) {
+            hotCorner.addEventListener('pointerdown', (e) => {
+                activePointerId = e.pointerId;
+                try { hotCorner.setPointerCapture(e.pointerId); } catch (err) {}
+                startHold(e);
+            });
+            const endPointer = (e) => {
+                if (activePointerId !== null && e.pointerId !== activePointerId) return;
+                cancelHold();
+            };
+            hotCorner.addEventListener('pointerup', endPointer);
+            hotCorner.addEventListener('pointerleave', endPointer);
+            // NOTE: deliberately NOT cancelling on pointercancel — Wayland
+            // touchscreens fire spurious cancel events during long holds.
+        } else {
+            // Fallback for browsers without Pointer Events
+            hotCorner.addEventListener('touchstart', startHold, { passive: false });
+            hotCorner.addEventListener('touchend', (e) => { e.preventDefault(); cancelHold(); });
+            hotCorner.addEventListener('mousedown', startHold);
+            hotCorner.addEventListener('mouseup', cancelHold);
+            hotCorner.addEventListener('mouseleave', cancelHold);
+        }
 
         // Brightness control
         let autoBrightnessEnabled = localStorage.getItem('frame-auto-brightness') === 'true';
@@ -1795,29 +1831,74 @@
             });
         }
 
+        function isVideoPath(path) {
+            return /\.(mp4|webm|mov|m4v)(\?|$)/i.test(path);
+        }
+
         let transitioning = false;
 
         async function showPhoto(photoPath) {
             const slideshow = document.getElementById('slideshow');
             try {
-                await preloadImage(photoPath);
-                const newImage = document.createElement('img');
-                newImage.src = photoPath;
-                newImage.className = 'photo';
-                slideshow.appendChild(newImage);
+                let newElem;
+                if (isVideoPath(photoPath)) {
+                    newElem = document.createElement('video');
+                    newElem.src = photoPath;
+                    newElem.className = 'photo';
+                    newElem.muted = true;
+                    newElem.autoplay = true;
+                    newElem.playsInline = true;
+                    newElem.preload = 'auto';
+                    // Wait for video to be ready to play
+                    await new Promise((resolve, reject) => {
+                        const onReady = () => { cleanup(); resolve(); };
+                        const onError = (e) => { cleanup(); reject(e); };
+                        const cleanup = () => {
+                            newElem.removeEventListener('canplay', onReady);
+                            newElem.removeEventListener('error', onError);
+                        };
+                        newElem.addEventListener('canplay', onReady, { once: true });
+                        newElem.addEventListener('error', onError, { once: true });
+                        // Fallback: don't hang forever if events don't fire
+                        setTimeout(() => { cleanup(); resolve(); }, 5000);
+                    });
+                } else {
+                    await preloadImage(photoPath);
+                    newElem = document.createElement('img');
+                    newElem.src = photoPath;
+                    newElem.className = 'photo';
+                }
+                slideshow.appendChild(newElem);
                 await new Promise(resolve => setTimeout(resolve, 50));
-                newImage.classList.add('active');
+                newElem.classList.add('active');
+                if (newElem.tagName === 'VIDEO') {
+                    try { await newElem.play(); } catch (e) { console.warn('Video play failed:', e); }
+                }
                 if (currentImage) {
                     currentImage.classList.remove('active');
                     currentImage.classList.add('previous');
+                    // Pause prior video so it doesn't keep playing in background
+                    if (currentImage.tagName === 'VIDEO') {
+                        try { currentImage.pause(); } catch (e) {}
+                    }
                 }
                 if (previousImage) previousImage.remove();
                 previousImage = currentImage;
-                currentImage = newImage;
+                currentImage = newElem;
                 return true;
             } catch (error) {
                 console.error('Error loading photo:', photoPath, error);
                 return false;
+            }
+        }
+
+        function advanceIndex() {
+            currentIndex = (currentIndex + 1) % photos.length;
+            if (currentIndex === 0) {
+                for (let i = photos.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [photos[i], photos[j]] = [photos[j], photos[i]];
+                }
             }
         }
 
@@ -1829,19 +1910,14 @@
                 if (photoHistory.length > 50) photoHistory.shift();
                 const photoPath = photos[currentIndex];
                 if (await showPhoto(photoPath)) {
-                    currentIndex = (currentIndex + 1) % photos.length;
-                    if (currentIndex === 0) {
-                        for (let i = photos.length - 1; i > 0; i--) {
-                            const j = Math.floor(Math.random() * (i + 1));
-                            [photos[i], photos[j]] = [photos[j], photos[i]];
-                        }
-                    }
+                    advanceIndex();
                 } else {
-                    currentIndex = (currentIndex + 1) % photos.length;
+                    advanceIndex();
                 }
             } finally {
                 transitioning = false;
             }
+            scheduleNextAdvance();
         }
 
         async function showPrevPhoto() {
@@ -1854,14 +1930,36 @@
             } finally {
                 transitioning = false;
             }
+            scheduleNextAdvance();
+        }
+
+        // Replaces the fixed setInterval — for videos we wait for 'ended',
+        // for photos we use config.interval.
+        function scheduleNextAdvance() {
+            if (intervalId) { clearTimeout(intervalId); intervalId = null; }
+            if (!currentImage) return;
+            if (currentImage.tagName === 'VIDEO') {
+                const onEnded = () => {
+                    currentImage.removeEventListener('ended', onEnded);
+                    showNextPhoto();
+                };
+                currentImage.addEventListener('ended', onEnded, { once: true });
+                // Safety fallback: if 'ended' never fires (e.g. corrupt video),
+                // advance after duration + 5s, or 3 minutes max.
+                const dur = (currentImage.duration && isFinite(currentImage.duration))
+                    ? currentImage.duration : 180;
+                intervalId = setTimeout(() => {
+                    currentImage.removeEventListener('ended', onEnded);
+                    showNextPhoto();
+                }, (dur + 5) * 1000);
+            } else {
+                intervalId = setTimeout(showNextPhoto, config.interval);
+            }
         }
 
         function startSlideshow() {
-            // Show first photo immediately
+            // Show first photo immediately, scheduleNextAdvance is called inside showNextPhoto
             showNextPhoto();
-
-            // Then show next photos at interval
-            intervalId = setInterval(showNextPhoto, config.interval);
 
             // Periodically check for photo list changes (e.g. after sync)
             setInterval(refreshPhotoList, 60000);

@@ -23,9 +23,18 @@ if [ -f config_frame.yaml ]; then
     if ! grep -q '^energy_save:' config_frame.yaml; then
         echo -e "\nenergy_save:\n  method: ddcci" >> config_frame.yaml
     fi
+    if ! grep -q '^videos:' config_frame.yaml; then
+        echo -e "\nvideos:\n  enabled: true\n  max_duration: 120\n  max_filesize_mb: 100" >> config_frame.yaml
+    fi
     if grep -q 'local_api_base' config_frame.yaml; then
         sed -i '/local_api_base/d' config_frame.yaml
     fi
+fi
+
+# 2b. Install ffmpeg if missing (added 2026-05 for video support)
+if ! command -v ffmpeg >/dev/null 2>&1; then
+    echo "Installing ffmpeg (needed for video transcoding)..."
+    sudo apt-get install -y --fix-missing ffmpeg || echo "WARNING: ffmpeg install failed"
 fi
 
 # 3. Update pip deps if changed

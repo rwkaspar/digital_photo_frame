@@ -106,7 +106,7 @@ if ! ping -c 1 -W 5 8.8.8.8 &>/dev/null; then
 fi
 
 # ---- System packages (with retry) ----
-PACKAGES="git python3-venv python3-dev labwc wlr-randr seatd chromium ddcutil i2c-tools network-manager libjpeg-dev zlib1g-dev libffi-dev libheif-dev fonts-noto-color-emoji"
+PACKAGES="git python3-venv python3-dev labwc wlr-randr seatd chromium ddcutil i2c-tools network-manager libjpeg-dev zlib1g-dev libffi-dev libheif-dev fonts-noto-color-emoji ffmpeg"
 
 MISSING_PKGS=""
 for pkg in $PACKAGES; do
@@ -131,7 +131,7 @@ if [ -n "$MISSING_PKGS" ]; then
             install_packages || log "ERROR: apt-get install failed after 3 attempts"
         fi
     fi
-    for pkg in python3-dev labwc chromium seatd libheif-dev wlr-randr fonts-noto-color-emoji ddcutil; do
+    for pkg in python3-dev labwc chromium seatd libheif-dev wlr-randr fonts-noto-color-emoji ddcutil ffmpeg; do
         if ! dpkg -s "$pkg" &>/dev/null; then
             log "WARNING: $pkg missing, attempting individual install..."
             apt-get install -y "$pkg" 2>&1 | tee -a "$SETUP_LOG" || log "WARNING: could not install $pkg"
@@ -221,6 +221,10 @@ photos:
   quality: 85
   state_db: /srv/frame/photos/state.db
   tmp_dir: /tmp/frame_downloads
+videos:
+  enabled: true
+  max_duration: 120
+  max_filesize_mb: 100
 slideshow:
   interval: 10
   fade_duration: 1.0
@@ -231,6 +235,11 @@ synology:
 google_photos:
   share_urls: []
 immich:
+  share_urls: []
+  share_passphrases: []
+icloud:
+  share_urls: []
+nextcloud:
   share_urls: []
   share_passphrases: []
 energy_save:

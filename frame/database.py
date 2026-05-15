@@ -32,7 +32,8 @@ class PhotoDatabase:
                 downloaded INTEGER DEFAULT 0,
                 download_failed INTEGER DEFAULT 0,
                 h_filename TEXT,
-                v_filename TEXT
+                v_filename TEXT,
+                media_type TEXT DEFAULT 'photo'
             )
         ''')
         cursor.execute('''
@@ -47,6 +48,7 @@ class PhotoDatabase:
         ''')
         self.conn.commit()
         self._migrate_item_id_to_text()
+        self._migrate_add_media_type()
 
     def _migrate_item_id_to_text(self):
         """Migrate item_id column from INTEGER to TEXT if needed.
@@ -88,6 +90,16 @@ class PhotoDatabase:
                 logger.info("Migration complete")
                 break
 
+    def _migrate_add_media_type(self):
+        """Add media_type column to existing photos tables."""
+        cursor = self.conn.cursor()
+        cursor.execute("PRAGMA table_info(photos)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'media_type' not in columns:
+            logger.info("Migrating photos table: adding media_type column")
+            cursor.execute("ALTER TABLE photos ADD COLUMN media_type TEXT DEFAULT 'photo'")
+            self.conn.commit()
+
     def update_items(self, items: List[Dict[str, Any]]) -> List[Tuple[Optional[str], Optional[str]]]:
         """Update database with items from the API.
 
@@ -99,12 +111,13 @@ class PhotoDatabase:
         for item in items:
             cursor.execute('''
                 INSERT INTO photos (item_id, filename, filesize, taken_time,
-                                    first_seen, last_seen)
-                VALUES (?, ?, ?, ?, ?, ?)
+                                    first_seen, last_seen, media_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(item_id) DO UPDATE SET
                     last_seen = excluded.last_seen,
                     filename = excluded.filename,
-                    filesize = excluded.filesize
+                    filesize = excluded.filesize,
+                    media_type = excluded.media_type
             ''', (
                 item['id'],
                 item.get('filename', ''),
@@ -112,6 +125,7 @@ class PhotoDatabase:
                 item.get('time', 0),
                 now,
                 now,
+                item.get('media_type', 'photo'),
             ))
 
         # Find stale entries (no longer in any album)
@@ -146,7 +160,8 @@ class PhotoDatabase:
         other_col = 'v_filename' if orientation == 'horizontal' else 'h_filename'
         cursor = self.conn.cursor()
         cursor.execute(f'''
-            SELECT item_id, filename, filesize, {other_col} as other_filename
+            SELECT item_id, filename, filesize, media_type,
+                   {other_col} as other_filename
             FROM photos
             WHERE {col} IS NULL AND download_failed < 3
         ''')
@@ -193,11 +208,11 @@ class PhotoDatabase:
         if not photo_dir.exists():
             return 0
 
-        photos = sorted(photo_dir.glob('*.jpg'))
-        if len(photos) <= keep_count:
+        media = sorted(list(photo_dir.glob('*.jpg')) + list(photo_dir.glob('*.mp4')))
+        if len(media) <= keep_count:
             return 0
 
-        to_delete = photos[keep_count:]
+        to_delete = media[keep_count:]
         deleted_names = set()
         for p in to_delete:
             deleted_names.add(p.name)

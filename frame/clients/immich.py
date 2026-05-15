@@ -120,18 +120,21 @@ class ImmichClient:
 
         items = []
         for asset in assets:
-            if asset.get('type', '').upper() == 'VIDEO':
-                continue
+            asset_type = asset.get('type', '').upper()
+            media_type = 'video' if asset_type == 'VIDEO' else 'photo'
             asset_id = asset.get('id', '')
             filename = asset.get('originalFileName', asset.get('originalPath', '').split('/')[-1])
+            if not filename:
+                filename = f'{asset_id}.mp4' if media_type == 'video' else f'{asset_id}.jpg'
             items.append({
                 'id': f'imm_{asset_id}',
-                'filename': filename or f'{asset_id}.jpg',
+                'filename': filename,
                 'filesize': asset.get('exifInfo', {}).get('fileSizeInByte', 0),
                 'time': 0,
+                'media_type': media_type,
             })
 
-        logger.info(f"Immich: found {len(items)} photos in shared album")
+        logger.info(f"Immich: found {len(items)} items in shared album")
         return items
 
     def get_album_name(self) -> str:

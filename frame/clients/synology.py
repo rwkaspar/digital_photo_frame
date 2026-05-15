@@ -106,16 +106,18 @@ class SynologyPhotosClient:
             if not items:
                 break
 
-            VIDEO_EXTS = {'.mov', '.mp4', '.avi', '.mkv', '.wmv', '.m4v'}
+            from frame.video import VIDEO_EXTENSIONS
             for item in items:
                 filename = item.get('filename', '')
                 ext = os.path.splitext(filename)[1].lower()
-                if ext in VIDEO_EXTS:
+                is_video = (ext in VIDEO_EXTENSIONS or item.get('type') == 'video')
+                if is_video:
+                    item['media_type'] = 'video'
+                elif item.get('type') == 'photo' or 'filename' in item:
+                    item['media_type'] = 'photo'
+                else:
                     continue
-                if item.get('type') == 'video':
-                    continue
-                if item.get('type') == 'photo' or 'filename' in item:
-                    all_items.append(item)
+                all_items.append(item)
 
             logger.info(
                 f"Fetched {len(items)} items (offset={offset}), "
