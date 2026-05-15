@@ -35,7 +35,8 @@
             max-height: 100%;
             object-fit: contain;
             opacity: 0;
-            transition: opacity 1s ease-in-out;
+            transition: opacity 0.5s ease-in-out;
+            will-change: opacity;
         }
 
         .photo.active {
@@ -48,7 +49,10 @@
             z-index: 0;
         }
 
-        /* Video slide wrapper: full viewport, holds blurred bg + sharp fg */
+        /* Video slide wrapper: holds the sharp video and a STATIC blurred
+         * background (snapshot of first frame as a CSS background-image,
+         * not a second decoded stream — Pi Zero can only smoothly decode
+         * one H.264 stream at a time). */
         .video-slide {
             position: absolute;
             top: 0;
@@ -58,16 +62,18 @@
             max-width: none;
             max-height: none;
             overflow: hidden;
+            background-color: #000;
+            background-position: center;
+            background-size: cover;
         }
-        .video-slide .video-bg {
+        .video-slide.has-blur-bg::before {
+            content: '';
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;            /* fill viewport, may crop */
-            filter: blur(20px) brightness(0.6);
-            transform: scale(1.1);        /* hide blur edge artefacts */
+            inset: -5%;
+            background-image: inherit;
+            background-position: center;
+            background-size: cover;
+            filter: blur(28px) brightness(0.6);
             z-index: 0;
         }
         .video-slide .video-fg {
@@ -76,7 +82,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            object-fit: contain;          /* sharp, with letterbox where needed */
+            object-fit: contain;
             z-index: 1;
         }
 
@@ -1882,9 +1888,13 @@
 
         let transitioning = false;
 
-        // Build the element tree for one slide. For videos returns a wrapper
-        // <div> holding a blurred background <video> and a sharp <video> on top
-        // (matches the photo blur-fill style — fills the screen, no black bars).
+        // Build the element tree for one slide.
+        // - Photos: single <img>.
+        // - Videos: wrapper <div> with ONE <video> (foreground, contain) and a
+        //   blurred background populated from a still snapshot of the first
+        //   frame. Pi Zero 2W can't smoothly decode 2 H.264 streams in
+        //   parallel, so we don't duplicate the video — capture once via a
+        //   hidden <canvas> and use as background-image.
         function buildSlide(path) {
             if (!isVideoPath(path)) {
                 const img = document.createElement('img');
@@ -1894,22 +1904,37 @@
             }
             const wrap = document.createElement('div');
             wrap.className = 'photo video-slide';
-            const bg = document.createElement('video');
             const fg = document.createElement('video');
-            for (const v of [bg, fg]) {
-                v.src = path;
-                v.muted = true;
-                v.autoplay = true;
-                v.playsInline = true;
-                v.preload = 'auto';
-            }
-            bg.className = 'video-bg';
+            fg.src = path;
+            fg.muted = true;
+            fg.autoplay = true;
+            fg.playsInline = true;
+            fg.preload = 'auto';
             fg.className = 'video-fg';
-            wrap.appendChild(bg);
             wrap.appendChild(fg);
-            // Attach a reference so scheduleNextAdvance() can listen on the FG video
             wrap._fg = fg;
             return wrap;
+        }
+
+        // Capture one frame from a <video> and set it as the wrapper's
+        // background-image — feeds the CSS .has-blur-bg::before rule.
+        function captureBlurBg(wrap, video) {
+            try {
+                const w = video.videoWidth, h = video.videoHeight;
+                if (!w || !h) return;
+                // Down-scale heavily — blur masks any quality loss and small
+                // bitmaps are cheap on Pi Zero.
+                const scale = Math.min(1, 320 / Math.max(w, h));
+                const cw = Math.max(2, Math.round(w * scale));
+                const ch = Math.max(2, Math.round(h * scale));
+                const c = document.createElement('canvas');
+                c.width = cw; c.height = ch;
+                c.getContext('2d').drawImage(video, 0, 0, cw, ch);
+                wrap.style.backgroundImage = `url("${c.toDataURL('image/jpeg', 0.6)}")`;
+                wrap.classList.add('has-blur-bg');
+            } catch (e) {
+                // CORS/decode error — leave as plain black background, fine
+            }
         }
 
         async function showPhoto(photoPath) {
@@ -1930,6 +1955,8 @@
                         fg.addEventListener('error', cleanup, { once: true });
                         setTimeout(cleanup, 5000);
                     });
+                    // Snapshot first frame for the blurred background
+                    captureBlurBg(newElem, fg);
                 } else {
                     await preloadImage(photoPath);
                 }
@@ -1939,16 +1966,13 @@
                 newElem.classList.add('active');
                 if (newElem._fg) {
                     try { await newElem._fg.play(); } catch (e) {}
-                    try { await newElem.querySelector('.video-bg').play(); } catch (e) {}
                 }
 
                 if (currentImage) {
                     currentImage.classList.remove('active');
                     currentImage.classList.add('previous');
-                    // Pause prior videos so they don't keep playing in background
                     if (currentImage._fg) {
                         try { currentImage._fg.pause(); } catch (e) {}
-                        try { currentImage.querySelector('.video-bg').pause(); } catch (e) {}
                     }
                 }
                 if (previousImage) previousImage.remove();
