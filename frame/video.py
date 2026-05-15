@@ -22,12 +22,19 @@ def is_video_mime(mime: str) -> bool:
 
 
 def probe_video(path: Path) -> Optional[dict]:
-    """Return {width, height, duration, rotation} or None if not a video."""
+    """Return {width, height, duration, rotation} or None if not a video.
+
+    Uses -analyzeduration/-probesize limits so ffprobe doesn't scan the
+    entire file on slow SD cards (Pi Zero often hits 30s timeout otherwise).
+    """
     try:
         result = subprocess.run(
-            ['ffprobe', '-v', 'error', '-print_format', 'json',
+            ['ffprobe', '-v', 'error',
+             '-analyzeduration', '2000000',  # 2 s
+             '-probesize', '5000000',         # 5 MB
+             '-print_format', 'json',
              '-show_streams', '-show_format', str(path)],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=60,
         )
         if result.returncode != 0:
             logger.warning(f"ffprobe failed for {path.name}: {result.stderr[:200]}")
@@ -59,8 +66,12 @@ def probe_video(path: Path) -> Optional[dict]:
 
 
 def _build_filter(src_w: int, src_h: int, tgt_w: int, tgt_h: int,
-                  blur_radius: int) -> str:
+                  blur_radius: int, blur_fill: bool = True) -> str:
     """Build ffmpeg filter graph: same orientation = scale+crop, cross = blur-fill.
+
+    To keep memory low on Pi Zero, we ALWAYS scale source to the target
+    bounding box first (limits decoded YUV frame size). For cross-orientation
+    we then split that smaller frame.
 
     blur_radius is the PIL Gaussian radius from photo config; map to ffmpeg
     boxblur luma_radius (rough ratio).
@@ -74,13 +85,18 @@ def _build_filter(src_w: int, src_h: int, tgt_w: int, tgt_h: int,
         return (f"scale={tgt_w}:{tgt_h}:force_original_aspect_ratio=increase,"
                 f"crop={tgt_w}:{tgt_h}")
 
-    # Cross orientation: blur-fill background + centered foreground
+    if not blur_fill:
+        # Letterbox fallback: scale to fit, pad with black. Lowest memory.
+        return (f"scale={tgt_w}:{tgt_h}:force_original_aspect_ratio=decrease,"
+                f"pad={tgt_w}:{tgt_h}:(ow-iw)/2:(oh-ih)/2:color=black")
+
+    # Cross orientation blur-fill: scale source down FIRST so split copies
+    # work on a small frame, then build the blur background + overlay.
     return (
-        f"split=2[bg][fg];"
+        f"[0:v]scale={tgt_w}:{tgt_h}:force_original_aspect_ratio=decrease,split=2[bg][fg];"
         f"[bg]scale={tgt_w}:{tgt_h}:force_original_aspect_ratio=increase,"
         f"crop={tgt_w}:{tgt_h},boxblur={box_r}:1,eq=brightness=-0.2[bg2];"
-        f"[fg]scale={tgt_w}:{tgt_h}:force_original_aspect_ratio=decrease[fg2];"
-        f"[bg2][fg2]overlay=(W-w)/2:(H-h)/2"
+        f"[bg2][fg]overlay=(W-w)/2:(H-h)/2"
     )
 
 
@@ -133,38 +149,69 @@ def transcode_video(source_path: Path, output_dir: Path,
     stem = Path(filename).stem
     out_name = f"{item_id}_{stem}.mp4"
     h_fn = v_fn = None
+    # Pi Zero 2W has 425MB RAM — running with -threads 1 keeps memory
+    # bounded (libx264 with multiple threads buffers extra frames per thread).
+    threads = '1'
 
-    for orient in orientations:
-        tgt_w, tgt_h = h_size if orient == 'horizontal' else v_size
-        out_path = output_dir / orient / out_name
-
-        vf = _build_filter(src_w, src_h, tgt_w, tgt_h, blur_radius)
-
+    def _run(filter_str: str, complex_filter: bool) -> tuple:
+        """Run ffmpeg with the given filter. Returns (returncode, stderr)."""
         cmd = [
             'ffmpeg', '-y', '-loglevel', 'error',
+            '-threads', threads,
             '-i', str(source_path),
-            '-filter_complex', vf,
+        ]
+        if complex_filter:
+            cmd += ['-filter_complex', filter_str]
+        else:
+            cmd += ['-vf', filter_str]
+        cmd += [
             '-c:v', 'libx264',
             '-profile:v', 'baseline',
             '-level', '4.0',
             '-pix_fmt', 'yuv420p',
             '-preset', 'ultrafast',
             '-crf', '24',
+            '-x264-params', f'threads={threads}',
             '-movflags', '+faststart',
-            '-an',  # no audio
+            '-an',
             str(out_path),
         ]
-
         try:
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            # Allow up to 10x video duration for transcode (Pi Zero is slow)
             timeout = max(120, int(probe['duration'] * 10) + 60)
             result = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=timeout,
             )
-            if result.returncode != 0:
-                logger.error(f"ffmpeg failed for {filename} ({orient}): "
-                             f"{result.stderr[:300]}")
+            return result.returncode, result.stderr or ''
+        except subprocess.TimeoutExpired:
+            return -1, 'TIMEOUT'
+
+    for orient in orientations:
+        tgt_w, tgt_h = h_size if orient == 'horizontal' else v_size
+        out_path = output_dir / orient / out_name
+
+        src_landscape = src_w >= src_h
+        tgt_landscape = tgt_w >= tgt_h
+        is_cross = (src_landscape != tgt_landscape)
+
+        try:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Try blur-fill (cross-orient) or scale+crop (same-orient)
+            vf = _build_filter(src_w, src_h, tgt_w, tgt_h, blur_radius,
+                               blur_fill=True)
+            rc, err = _run(vf, complex_filter=is_cross)
+
+            if rc != 0 and is_cross:
+                # OOM or other failure with blur-fill — fall back to letterbox
+                out_path.unlink(missing_ok=True)
+                logger.warning(f"Blur-fill failed for {filename} ({orient}); "
+                               f"retrying with letterbox. err={err[:200]}")
+                vf_lb = _build_filter(src_w, src_h, tgt_w, tgt_h, blur_radius,
+                                      blur_fill=False)
+                rc, err = _run(vf_lb, complex_filter=False)
+
+            if rc != 0:
+                logger.error(f"ffmpeg failed for {filename} ({orient}): {err[:300]}")
                 out_path.unlink(missing_ok=True)
                 return None
 
@@ -173,10 +220,6 @@ def transcode_video(source_path: Path, output_dir: Path,
             else:
                 v_fn = out_name
             logger.debug(f"Transcoded {filename} -> {out_name} ({orient})")
-        except subprocess.TimeoutExpired:
-            logger.error(f"ffmpeg timeout for {filename} ({orient})")
-            out_path.unlink(missing_ok=True)
-            return None
         except OSError as e:
             logger.error(f"ffmpeg error for {filename}: {e}")
             return None
