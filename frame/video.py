@@ -172,12 +172,18 @@ def transcode_video(source_path: Path, output_dir: Path,
             '-preset', 'ultrafast',
             '-crf', '24',
             '-x264-params', f'threads={threads}',
-            '-movflags', '+faststart',
+            # Fragmented MP4: each fragment is self-contained, so a partial
+            # file from a SIGKILLed ffmpeg is still playable up to the last
+            # complete fragment. Faststart would require a final rewrite that
+            # never happens on timeout-kill.
+            '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
             '-an',
             str(out_path),
         ]
         try:
-            timeout = max(120, int(probe['duration'] * 10) + 60)
+            # HEVC software decode + libx264 on Pi Zero can run at 0.1-0.2× realtime
+            # for 4K source. Be generous to avoid SIGKILL truncating output.
+            timeout = max(600, int(probe['duration'] * 30) + 300)
             result = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=timeout,
             )
@@ -259,7 +265,9 @@ def transcode_video_in_subprocess(source_path, output_dir, item_id, filename,
     # Probe in parent first to set timeout (cheap, ~1s)
     probe = probe_video(Path(source_path))
     duration = probe['duration'] if probe else 60
-    timeout = max(300, int(duration * 10 * len(orientations)) + 120)
+    # Allow generous time per orientation (blur-fill + letterbox retry).
+    # Pi Zero with HEVC 4K source is genuinely slow.
+    timeout = max(1200, int(duration * 60 * len(orientations)) + 300)
 
     result_file = Path('/tmp') / f'frame_vproc_{os.getpid()}_{item_id}.json'
     try:
