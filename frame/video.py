@@ -165,12 +165,15 @@ def transcode_video(source_path: Path, output_dir: Path,
         else:
             cmd += ['-vf', filter_str]
         cmd += [
+            '-r', '30',  # cap output framerate — Pi Zero can't decode 60fps H.264 smoothly
             '-c:v', 'libx264',
             '-profile:v', 'baseline',
             '-level', '4.0',
             '-pix_fmt', 'yuv420p',
             '-preset', 'ultrafast',
-            '-crf', '24',
+            '-crf', '28',
+            '-maxrate', '2500k',
+            '-bufsize', '5000k',
             '-x264-params', f'threads={threads}',
             # Fragmented MP4: each fragment is self-contained, so a partial
             # file from a SIGKILLed ffmpeg is still playable up to the last
