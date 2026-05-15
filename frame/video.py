@@ -153,6 +153,46 @@ def transcode_video(source_path: Path, output_dir: Path,
     # bounded (libx264 with multiple threads buffers extra frames per thread).
     threads = '1'
 
+    # PASS 1: if source is large (4K HEVC, etc.), pre-scale to 1080p H.264
+    # FIRST. Without this, the filter_complex blur-fill pass has to allocate
+    # huge YUV decode buffers AND duplicate them via split= — hits OOM on
+    # the Pi. The intermediate is small (~5MB), the second pass operates on
+    # cheap H.264 frames.
+    PRE_SCALE_TARGET = 1080
+    if max(src_w, src_h) > PRE_SCALE_TARGET:
+        intermediate = source_path.parent / f"_scaled_{item_id}.mp4"
+        scale_filter = (f"scale={PRE_SCALE_TARGET}:-2:"
+                        f"force_original_aspect_ratio=decrease")
+        cmd_pre = [
+            'ffmpeg', '-y', '-loglevel', 'error',
+            '-threads', threads,
+            '-i', str(source_path),
+            '-vf', scale_filter,
+            '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
+            '-pix_fmt', 'yuv420p',
+            '-x264-params', f'threads={threads}',
+            '-an',
+            str(intermediate),
+        ]
+        try:
+            pre_timeout = max(900, int(probe['duration'] * 30) + 300)
+            res = subprocess.run(cmd_pre, capture_output=True, text=True,
+                                 timeout=pre_timeout)
+            if res.returncode != 0:
+                logger.warning(f"Pre-scale failed for {filename}, using original "
+                               f"source: {res.stderr[:200]}")
+                intermediate.unlink(missing_ok=True)
+            else:
+                logger.info(f"Pre-scaled {filename} to 1080p intermediate")
+                source_path = intermediate
+                # Re-probe to update dimensions
+                probe2 = probe_video(source_path)
+                if probe2:
+                    src_w, src_h = _effective_dimensions(probe2)
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Pre-scale timeout for {filename}, using original")
+            intermediate.unlink(missing_ok=True)
+
     def _run(filter_str: str, complex_filter: bool) -> tuple:
         """Run ffmpeg with the given filter. Returns (returncode, stderr)."""
         cmd = [
@@ -232,6 +272,10 @@ def transcode_video(source_path: Path, output_dir: Path,
         except OSError as e:
             logger.error(f"ffmpeg error for {filename}: {e}")
             return None
+
+    # Clean up the pre-scaled intermediate if we created one
+    if source_path.name.startswith('_scaled_'):
+        source_path.unlink(missing_ok=True)
 
     return (h_fn, v_fn)
 
