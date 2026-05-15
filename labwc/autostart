@@ -33,7 +33,8 @@ fi
     --disable-pinch \
     --enable-features=VirtualKeyboard \
     --ozone-platform=wayland \
-    --use-gl=egl \
+    --use-gl=angle \
+    --use-angle=gles \
     --enable-gpu-rasterization \
     --enable-zero-copy \
     --ignore-gpu-blocklist \
