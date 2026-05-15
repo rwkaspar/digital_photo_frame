@@ -144,8 +144,8 @@ class PhotoFrameHandler(SimpleHTTPRequestHandler):
     # --- Page serving ---
 
     def serve_viewer(self):
-        """Serve the viewer HTML."""
-        self._serve_html_file('index.html')
+        """Serve the viewer HTML (no-cache so hot-corner/UI fixes deploy on update)."""
+        self._serve_html_file('index.html', cache=False)
 
     def serve_wizard(self):
         """Serve the first-time setup wizard."""
