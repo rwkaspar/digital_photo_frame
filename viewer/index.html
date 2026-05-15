@@ -870,6 +870,11 @@
     <div id="hot-corner"></div>
     <div id="hot-corner-progress"></div>
     <div id="hot-corner-hint"></div>
+    <!-- Debug: shows event type whenever a pointer/touch event fires anywhere. Lets us
+         confirm whether touch reaches the browser at all. Auto-hides after 800ms. -->
+    <div id="debug-evt" style="position:fixed;top:6px;left:6px;z-index:99999;
+         background:rgba(0,0,0,0.7);color:#0f0;padding:4px 10px;font-family:monospace;
+         font-size:14px;border-radius:4px;pointer-events:none;display:none"></div>
 
     <script>
         // --- i18n ---
@@ -1180,6 +1185,22 @@
             startClock();
         }
 
+        // Debug: flash event name in top-left corner so we can see if events fire
+        const debugEvt = document.getElementById('debug-evt');
+        let debugEvtHideTimer = null;
+        function flashEvent(name) {
+            if (!debugEvt) return;
+            debugEvt.textContent = name;
+            debugEvt.style.display = 'block';
+            if (debugEvtHideTimer) clearTimeout(debugEvtHideTimer);
+            debugEvtHideTimer = setTimeout(() => {
+                debugEvt.style.display = 'none';
+            }, 800);
+        }
+        // Document-wide listeners (capture phase = always fires first)
+        ['pointerdown','touchstart','mousedown'].forEach(t =>
+            document.addEventListener(t, () => flashEvent(t), true));
+
         // Setup hot corner - hold to open settings
         const hotCorner = document.getElementById('hot-corner');
         const hotCornerProgress = document.getElementById('hot-corner-progress');
@@ -1223,9 +1244,9 @@
             hotCornerProgress.style.setProperty('--progress', '0%');
         }
 
-        // Pointer Events: unified handling of touch + mouse + stylus.
-        // Some Wayland/Chromium touchscreens don't deliver consistent
-        // touchstart/touchend pairs but DO deliver pointer events reliably.
+        // Register BOTH Pointer Events AND Touch/Mouse handlers — some
+        // Wayland/Chromium combos deliver one but not the other reliably.
+        // startHold() guards re-entry so duplicate triggers are harmless.
         if (window.PointerEvent) {
             hotCorner.addEventListener('pointerdown', (e) => {
                 activePointerId = e.pointerId;
@@ -1238,16 +1259,19 @@
             };
             hotCorner.addEventListener('pointerup', endPointer);
             hotCorner.addEventListener('pointerleave', endPointer);
-            // NOTE: deliberately NOT cancelling on pointercancel — Wayland
+            // Deliberately NOT cancelling on pointercancel — Wayland
             // touchscreens fire spurious cancel events during long holds.
-        } else {
-            // Fallback for browsers without Pointer Events
-            hotCorner.addEventListener('touchstart', startHold, { passive: false });
-            hotCorner.addEventListener('touchend', (e) => { e.preventDefault(); cancelHold(); });
-            hotCorner.addEventListener('mousedown', startHold);
-            hotCorner.addEventListener('mouseup', cancelHold);
-            hotCorner.addEventListener('mouseleave', cancelHold);
         }
+        // Touch + mouse fallbacks (always registered, guarded by startHold's
+        // re-entry check). Belt-and-suspenders for unreliable Wayland touch.
+        hotCorner.addEventListener('touchstart', startHold, { passive: false });
+        hotCorner.addEventListener('touchend', (e) => {
+            if (e && e.preventDefault) e.preventDefault();
+            cancelHold();
+        });
+        hotCorner.addEventListener('mousedown', startHold);
+        hotCorner.addEventListener('mouseup', cancelHold);
+        hotCorner.addEventListener('mouseleave', cancelHold);
 
         // Brightness control
         let autoBrightnessEnabled = localStorage.getItem('frame-auto-brightness') === 'true';

@@ -33,4 +33,10 @@ fi
     --disable-pinch \
     --enable-features=VirtualKeyboard \
     --ozone-platform=wayland \
+    --use-gl=egl \
+    --enable-gpu-rasterization \
+    --enable-zero-copy \
+    --ignore-gpu-blocklist \
+    --enable-accelerated-video-decode \
+    --enable-accelerated-2d-canvas \
     http://localhost:8080/ &
