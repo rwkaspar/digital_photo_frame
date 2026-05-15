@@ -48,6 +48,38 @@
             z-index: 0;
         }
 
+        /* Video slide wrapper: full viewport, holds blurred bg + sharp fg */
+        .video-slide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            max-width: none;
+            max-height: none;
+            overflow: hidden;
+        }
+        .video-slide .video-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;            /* fill viewport, may crop */
+            filter: blur(20px) brightness(0.6);
+            transform: scale(1.1);        /* hide blur edge artefacts */
+            z-index: 0;
+        }
+        .video-slide .video-fg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;          /* sharp, with letterbox where needed */
+            z-index: 1;
+        }
+
         #hot-corner {
             position: fixed;
             top: 0;
@@ -870,11 +902,6 @@
     <div id="hot-corner"></div>
     <div id="hot-corner-progress"></div>
     <div id="hot-corner-hint"></div>
-    <!-- Debug: shows event type whenever a pointer/touch event fires anywhere. Lets us
-         confirm whether touch reaches the browser at all. Auto-hides after 800ms. -->
-    <div id="debug-evt" style="position:fixed;top:6px;left:6px;z-index:99999;
-         background:rgba(0,0,0,0.7);color:#0f0;padding:4px 10px;font-family:monospace;
-         font-size:14px;border-radius:4px;pointer-events:none;display:none"></div>
 
     <script>
         // --- i18n ---
@@ -1184,22 +1211,6 @@
             document.getElementById('clock-overlay').classList.add('visible');
             startClock();
         }
-
-        // Debug: flash event name in top-left corner so we can see if events fire
-        const debugEvt = document.getElementById('debug-evt');
-        let debugEvtHideTimer = null;
-        function flashEvent(name) {
-            if (!debugEvt) return;
-            debugEvt.textContent = name;
-            debugEvt.style.display = 'block';
-            if (debugEvtHideTimer) clearTimeout(debugEvtHideTimer);
-            debugEvtHideTimer = setTimeout(() => {
-                debugEvt.style.display = 'none';
-            }, 800);
-        }
-        // Document-wide listeners (capture phase = always fires first)
-        ['pointerdown','touchstart','mousedown'].forEach(t =>
-            document.addEventListener(t, () => flashEvent(t), true));
 
         // Setup hot corner - hold to open settings
         const hotCorner = document.getElementById('hot-corner');
@@ -1846,10 +1857,20 @@
             document.getElementById('loading').style.display = 'none';
         }
 
+        // Cache decoded images so transitions don't pay JPEG-decode cost.
+        const imageCache = new Map();
         function preloadImage(src) {
+            const cached = imageCache.get(src);
+            if (cached) return Promise.resolve(cached);
             return new Promise((resolve, reject) => {
                 const img = new Image();
-                img.onload = () => resolve(img);
+                img.onload = () => {
+                    // Use decode() if available — guarantees the bitmap is ready
+                    // BEFORE we hand the element to the slideshow (avoids a
+                    // first-paint hitch on Pi Zero).
+                    const done = () => { imageCache.set(src, img); resolve(img); };
+                    if (img.decode) img.decode().then(done, done); else done();
+                };
                 img.onerror = reject;
                 img.src = src;
             });
@@ -1861,57 +1882,87 @@
 
         let transitioning = false;
 
+        // Build the element tree for one slide. For videos returns a wrapper
+        // <div> holding a blurred background <video> and a sharp <video> on top
+        // (matches the photo blur-fill style — fills the screen, no black bars).
+        function buildSlide(path) {
+            if (!isVideoPath(path)) {
+                const img = document.createElement('img');
+                img.src = path;
+                img.className = 'photo';
+                return img;
+            }
+            const wrap = document.createElement('div');
+            wrap.className = 'photo video-slide';
+            const bg = document.createElement('video');
+            const fg = document.createElement('video');
+            for (const v of [bg, fg]) {
+                v.src = path;
+                v.muted = true;
+                v.autoplay = true;
+                v.playsInline = true;
+                v.preload = 'auto';
+            }
+            bg.className = 'video-bg';
+            fg.className = 'video-fg';
+            wrap.appendChild(bg);
+            wrap.appendChild(fg);
+            // Attach a reference so scheduleNextAdvance() can listen on the FG video
+            wrap._fg = fg;
+            return wrap;
+        }
+
         async function showPhoto(photoPath) {
             const slideshow = document.getElementById('slideshow');
             try {
-                let newElem;
+                const newElem = buildSlide(photoPath);
+
                 if (isVideoPath(photoPath)) {
-                    newElem = document.createElement('video');
-                    newElem.src = photoPath;
-                    newElem.className = 'photo';
-                    newElem.muted = true;
-                    newElem.autoplay = true;
-                    newElem.playsInline = true;
-                    newElem.preload = 'auto';
-                    // Wait for video to be ready to play
-                    await new Promise((resolve, reject) => {
-                        const onReady = () => { cleanup(); resolve(); };
-                        const onError = (e) => { cleanup(); reject(e); };
+                    // Wait until the FG video is ready to play
+                    const fg = newElem._fg;
+                    await new Promise(resolve => {
                         const cleanup = () => {
-                            newElem.removeEventListener('canplay', onReady);
-                            newElem.removeEventListener('error', onError);
+                            fg.removeEventListener('canplay', cleanup);
+                            fg.removeEventListener('error', cleanup);
+                            resolve();
                         };
-                        newElem.addEventListener('canplay', onReady, { once: true });
-                        newElem.addEventListener('error', onError, { once: true });
-                        // Fallback: don't hang forever if events don't fire
-                        setTimeout(() => { cleanup(); resolve(); }, 5000);
+                        fg.addEventListener('canplay', cleanup, { once: true });
+                        fg.addEventListener('error', cleanup, { once: true });
+                        setTimeout(cleanup, 5000);
                     });
                 } else {
                     await preloadImage(photoPath);
-                    newElem = document.createElement('img');
-                    newElem.src = photoPath;
-                    newElem.className = 'photo';
                 }
+
                 slideshow.appendChild(newElem);
                 await new Promise(resolve => setTimeout(resolve, 50));
                 newElem.classList.add('active');
-                if (newElem.tagName === 'VIDEO') {
-                    try { await newElem.play(); } catch (e) { console.warn('Video play failed:', e); }
+                if (newElem._fg) {
+                    try { await newElem._fg.play(); } catch (e) {}
+                    try { await newElem.querySelector('.video-bg').play(); } catch (e) {}
                 }
+
                 if (currentImage) {
                     currentImage.classList.remove('active');
                     currentImage.classList.add('previous');
-                    // Pause prior video so it doesn't keep playing in background
-                    if (currentImage.tagName === 'VIDEO') {
-                        try { currentImage.pause(); } catch (e) {}
+                    // Pause prior videos so they don't keep playing in background
+                    if (currentImage._fg) {
+                        try { currentImage._fg.pause(); } catch (e) {}
+                        try { currentImage.querySelector('.video-bg').pause(); } catch (e) {}
                     }
                 }
                 if (previousImage) previousImage.remove();
                 previousImage = currentImage;
                 currentImage = newElem;
+
+                // Pre-decode the NEXT photo so its transition is hitch-free.
+                const nextPath = photos[currentIndex];  // currentIndex still points to the *next* one before advanceIndex()
+                if (nextPath && !isVideoPath(nextPath)) {
+                    preloadImage(nextPath).catch(() => {});
+                }
                 return true;
             } catch (error) {
-                console.error('Error loading photo:', photoPath, error);
+                console.error('Error loading slide:', photoPath, error);
                 return false;
             }
         }
@@ -1962,18 +2013,20 @@
         function scheduleNextAdvance() {
             if (intervalId) { clearTimeout(intervalId); intervalId = null; }
             if (!currentImage) return;
-            if (currentImage.tagName === 'VIDEO') {
+            // Videos: the foreground <video> is at currentImage._fg (wrapper div)
+            const fgVideo = currentImage._fg;
+            if (fgVideo) {
                 const onEnded = () => {
-                    currentImage.removeEventListener('ended', onEnded);
+                    fgVideo.removeEventListener('ended', onEnded);
                     showNextPhoto();
                 };
-                currentImage.addEventListener('ended', onEnded, { once: true });
+                fgVideo.addEventListener('ended', onEnded, { once: true });
                 // Safety fallback: if 'ended' never fires (e.g. corrupt video),
                 // advance after duration + 5s, or 3 minutes max.
-                const dur = (currentImage.duration && isFinite(currentImage.duration))
-                    ? currentImage.duration : 180;
+                const dur = (fgVideo.duration && isFinite(fgVideo.duration))
+                    ? fgVideo.duration : 180;
                 intervalId = setTimeout(() => {
-                    currentImage.removeEventListener('ended', onEnded);
+                    fgVideo.removeEventListener('ended', onEnded);
                     showNextPhoto();
                 }, (dur + 5) * 1000);
             } else {
