@@ -304,3 +304,24 @@ sudo systemctl restart photo_frame_cage
 ## License
 
 This project is open source and available under the MIT License.
+
+## Building a ready-to-flash image
+
+A GitHub Actions workflow builds a 64-bit Raspberry Pi OS image with the photo
+frame pre-installed, so you can flash it straight from Raspberry Pi Imager
+instead of running the SD-prep scripts.
+
+- **Target:** arm64 only, Raspberry Pi Zero 2 W and newer.
+- **Build:** push a `vX.Y.Z` tag (the image is attached to the GitHub release),
+  or trigger *Build Pi image* manually under the Actions tab.
+- **What it bakes:** all apt dependencies pre-installed (so first boot is fast),
+  the app on the boot partition, and a first-boot service that runs the normal
+  `photo_frame_bootstrap.sh` → `setup_pi.sh` provisioning (venv, services,
+  config) for whatever user exists.
+- **Flashing:** open the `.img.xz` in Raspberry Pi Imager. Imager's WiFi / SSH /
+  locale customization still applies. The appliance user is `frame`
+  (password `photoframe`). Configure photo albums via the on-screen setup
+  wizard / hotspot captive portal on first boot.
+
+The build definition lives in `.github/workflows/build-image.yml` and the
+pi-gen stage in `imaging/stage-photoframe/`.

@@ -1,0 +1,80 @@
+name: Build Pi image
+
+# Builds a ready-to-flash 64-bit Raspberry Pi OS image with the photo frame
+# pre-installed. Run manually (workflow_dispatch) or automatically on a vX.Y.Z
+# tag, in which case the image is attached to the GitHub release.
+#
+# Target: arm64 only, Raspberry Pi Zero 2 W and newer.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref of the app to bake into the image
+        default: main
+        required: false
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # needed to attach the image to the release
+
+jobs:
+  build-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pin app repo + ref into the bake script
+        # pi-gen runs the install step inside a chroot where workflow env vars
+        # are not visible, so bake the values into the script on the host first.
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            REF="${{ github.ref_name }}"
+          else
+            REF="${{ github.event.inputs.ref || 'main' }}"
+          fi
+          URL="https://github.com/${{ github.repository }}.git"
+          SCRIPT=imaging/stage-photoframe/00-photoframe/01-run-chroot.sh
+          sed -i "s|:-https://github.com/rwkaspar/digital_photo_frame.git}|:-${URL}}|" "$SCRIPT"
+          sed -i "s|:-main}|:-${REF}}|" "$SCRIPT"
+          echo "Baking ${URL}@${REF}"
+          grep -E 'REPO_URL=|REPO_REF=' "$SCRIPT"
+
+      - name: Build image
+        id: build
+        uses: usimd/pi-gen-action@v1
+        with:
+          image-name: digital-photo-frame
+          pi-gen-version: arm64
+          release: trixie
+          stage-list: stage0 stage1 stage2 ./imaging/stage-photoframe
+          compression: xz
+          # Appliance user: fixed so first boot never shows an interactive
+          # user-creation prompt. Pi Imager customization for WiFi/SSH/locale
+          # still applies; albums are configured via the setup wizard.
+          username: frame
+          password: photoframe
+          disable-first-boot-user-rename: 1
+          enable-ssh: 1
+          timezone: Europe/Berlin
+          locale: de_DE.UTF-8
+          keyboard-keymap: de
+          keyboard-layout: German
+          increase-runner-disk-size: true
+          verbose-output: true
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: digital-photo-frame-image
+          path: ${{ steps.build.outputs.image-path }}
+          if-no-files-found: error
+
+      - name: Attach image to release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.build.outputs.image-path }}
