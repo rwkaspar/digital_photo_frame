@@ -10,6 +10,16 @@
             padding: 0;
             box-sizing: border-box;
             cursor: none !important;
+            /* Kiosk: never let the browser treat a drag as pan/scroll/zoom.
+             * Without this, a horizontal swipe fires pointercancel (the browser
+             * claims the gesture) instead of pointerup, so swipe navigation
+             * silently fails while the hold-to-open hot corner still works. */
+            touch-action: none;
+        }
+        html, body {
+            overscroll-behavior: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         body {
