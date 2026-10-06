@@ -70,3 +70,11 @@ class AppState:
         """Initialize the photo syncer (always, so cleanup works even with no albums)."""
         from frame.sync import PhotoSyncer
         self.syncer = PhotoSyncer(self.config)
+        # Defer video transcoding to the sleep window while a sleep schedule is
+        # active (display off = all cores free, no UI impact); do it inline if
+        # sleep is disabled so videos are not stuck forever. Evaluated lazily
+        # at each sync so it tracks the current schedule state.
+        self.syncer.set_video_gate(self._should_transcode_videos_inline)
+
+    def _should_transcode_videos_inline(self):
+        return not getattr(getattr(self, 'energy_save', None), 'enabled', False)

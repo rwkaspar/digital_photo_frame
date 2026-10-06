@@ -118,6 +118,7 @@ def transcode_video(source_path: Path, output_dir: Path,
                     orientations: Tuple[str, ...] = ('horizontal', 'vertical'),
                     max_duration: int = 120,
                     max_filesize_mb: int = 100,
+                    full_power: bool = False,
                     ) -> Optional[Tuple[Optional[str], Optional[str]]]:
     """Transcode a video to H.264 .mp4 at the requested orientations.
 
@@ -155,21 +156,31 @@ def transcode_video(source_path: Path, output_dir: Path,
     # thread (libx264 buffers extra frames per thread) with a pre-scale pass
     # and conservative caps; on a Pi 4/5 it uses all cores, one pass and
     # higher quality. See frame/hardware.py.
-    hw = transcode_profile()
+    hw = transcode_profile(full_power)
     threads = str(hw['threads'])
-    logger.info(f"Transcode profile: {hw['mem_mb']}MB RAM, {hw['cores']} cores "
-                f"-> threads={threads}, crf={hw['crf']}, pre_scale={hw['pre_scale']}")
+    logger.info(f"Transcode profile: {hw['mem_mb']}MB RAM, {hw['cores']} cores, "
+                f"full_power={full_power} -> threads={threads}, crf={hw['crf']}, "
+                f"pre_scale={hw['pre_scale']}")
 
     # PASS 1: if source is large (4K HEVC, etc.), pre-scale to 1080p H.264
     # FIRST. Without this, the filter_complex blur-fill pass has to allocate
     # huge YUV decode buffers AND duplicate them via split= — hits OOM on
     # the Pi. The intermediate is small (~5MB), the second pass operates on
     # cheap H.264 frames.
-    PRE_SCALE_TARGET = 1080
+    # Pre-scale target = the display's own resolution (largest output
+    # dimension across the requested orientations, e.g. 1920 for a 1920x1200
+    # screen), not a fixed 1080 — otherwise a >1080 source was needlessly
+    # downscaled and then upscaled back up to fill the panel, losing detail.
+    # Capped by the board's max_pre_scale so a weak board isn't overwhelmed by
+    # an unusually large panel.
+    screen_target = max(h_size[0], h_size[1], v_size[0], v_size[1])
+    PRE_SCALE_TARGET = min(screen_target, hw['max_pre_scale'])
     if hw['pre_scale'] and max(src_w, src_h) > PRE_SCALE_TARGET:
         intermediate = source_path.parent / f"_scaled_{item_id}.mp4"
-        scale_filter = (f"scale={PRE_SCALE_TARGET}:-2:"
-                        f"force_original_aspect_ratio=decrease")
+        # Fit within a TARGET×TARGET box (down-scale only, aspect preserved,
+        # even dimensions for yuv420p).
+        scale_filter = (f"scale={PRE_SCALE_TARGET}:{PRE_SCALE_TARGET}:"
+                        f"force_original_aspect_ratio=decrease:force_divisible_by=2")
         cmd_pre = [
             'ffmpeg', '-y', '-loglevel', 'error',
             '-threads', threads,
@@ -302,24 +313,28 @@ def transcode_video(source_path: Path, output_dir: Path,
 
 def _transcode_worker(source_path, output_dir, item_id, filename,
                       h_size, v_size, blur_radius, orientations,
-                      max_duration, max_filesize_mb, result_file):
+                      max_duration, max_filesize_mb, result_file,
+                      full_power=False):
     """Subprocess target: transcode one video, write result to a temp file."""
     try:
         with open('/proc/self/oom_score_adj', 'w') as f:
             f.write('800')
     except OSError:
         pass
-    # Run at low CPU priority so Chromium keeps the display and touch UI
-    # responsive while ffmpeg encodes (child ffmpeg inherits the niceness).
-    try:
-        os.nice(15)
-    except OSError:
-        pass
+    # With the display up (inline fallback) run at low CPU priority so
+    # Chromium stays responsive; child ffmpeg inherits the niceness. During
+    # sleep (full_power) the display is off, so encode at full speed.
+    if not full_power:
+        try:
+            os.nice(15)
+        except OSError:
+            pass
     result = transcode_video(
         Path(source_path), Path(output_dir), item_id, filename,
         h_size, v_size, blur_radius,
         orientations=orientations,
         max_duration=max_duration, max_filesize_mb=max_filesize_mb,
+        full_power=full_power,
     )
     with open(result_file, 'w') as f:
         json.dump(result, f)
@@ -329,6 +344,7 @@ def transcode_video_in_subprocess(source_path, output_dir, item_id, filename,
                                   h_size, v_size, blur_radius,
                                   orientations,
                                   max_duration=120, max_filesize_mb=100,
+                                  full_power=False,
                                   ):
     """Run transcode_video in a child process for memory cleanup.
 
@@ -348,7 +364,7 @@ def transcode_video_in_subprocess(source_path, output_dir, item_id, filename,
             target=_transcode_worker,
             args=(str(source_path), str(output_dir), item_id, filename,
                   h_size, v_size, blur_radius, orientations,
-                  max_duration, max_filesize_mb, str(result_file)),
+                  max_duration, max_filesize_mb, str(result_file), full_power),
         )
         p.start()
         p.join(timeout=timeout)

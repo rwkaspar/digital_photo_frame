@@ -53,13 +53,34 @@ class PhotoSyncer:
         self._last_error = None
         self._thread = None
         self._restart_requested = False
+        self._video_gate = None
+        self._allow_videos = True
+        self._full_power = False
 
-    def run_sync(self):
-        """Start a sync in a background thread. No-op if already running."""
+    def set_video_gate(self, fn):
+        """Set a predicate deciding whether a normal (non-sleep) sync may
+        transcode videos: True = do them inline now, False = defer until a
+        sleep-triggered sync (display off, all cores free)."""
+        self._video_gate = fn
+
+    def run_sync(self, allow_videos=None, full_power=False):
+        """Start a sync in a background thread. No-op if already running.
+
+        allow_videos: True/False forces video handling; None asks the gate.
+        full_power: the display is off (sleep), so a transcode may use every
+        core at normal priority.
+        """
         with self._lock:
             if self._running:
                 logger.info("Sync already running, skipping")
                 return
+            if allow_videos is None:
+                try:
+                    allow_videos = self._video_gate() if self._video_gate else True
+                except Exception:
+                    allow_videos = True
+            self._allow_videos = allow_videos
+            self._full_power = full_power
             self._running = True
             self._stop_event.clear()
             self._last_error = None
@@ -144,9 +165,12 @@ class PhotoSyncer:
         video_max_duration = video_config.get('max_duration', 120)
         video_max_filesize_mb = video_config.get('max_filesize_mb', 100)
         videos_enabled = video_config.get('enabled', True)
-        # Only free RAM by stopping the kiosk on memory-constrained boards
-        # (Pi Zero). On a Pi 4/5 there is ample RAM, so leave the display up.
-        stop_cage_for_video = transcode_profile()['stop_cage']
+        allow_videos = self._allow_videos
+        full_power = self._full_power
+        # Stopping the kiosk is only needed for an inline low-memory transcode
+        # with the display up; during sleep (full_power) the kiosk is already
+        # stopped by the energy manager.
+        stop_cage_needed = transcode_profile(full_power)['stop_cage']
 
         # Ensure directories
         (base_dir / 'horizontal').mkdir(parents=True, exist_ok=True)
@@ -408,6 +432,13 @@ class PhotoSyncer:
                 filename = item['filename']
                 download_path = tmp_dir / filename
 
+                # Defer videos to a sleep-triggered sync (display off, all
+                # cores free) unless this run is allowed to transcode them.
+                # Left pending (not failed), so the next sleep sync picks it up.
+                if not allow_videos and item.get('media_type') == 'video':
+                    logger.info(f"Deferring video {filename} until sleep")
+                    continue
+
                 client_info = item_client_map.get(item_id)
                 if client_info is None:
                     logger.warning(f"Skipping item {item_id}: no client found")
@@ -468,8 +499,9 @@ class PhotoSyncer:
                         continue
                     # Free RAM for ffmpeg by stopping Chromium kiosk during
                     # the first video transcode; restored at end of sync.
-                    # Skipped on roomy boards (see stop_cage_for_video).
-                    if stop_cage_for_video and not cage_stopped_for_video:
+                    # Only for an inline low-memory transcode (see
+                    # stop_cage_needed); during sleep the kiosk is already off.
+                    if stop_cage_needed and not cage_stopped_for_video:
                         try:
                             logger.info("Stopping cage to free RAM for video transcoding")
                             subprocess.run(['sudo', 'systemctl', 'stop',
@@ -485,6 +517,7 @@ class PhotoSyncer:
                         orientations=tuple(process_orientations),
                         max_duration=video_max_duration,
                         max_filesize_mb=video_max_filesize_mb,
+                        full_power=full_power,
                     )
                 else:
                     result = process_photo_in_subprocess(

@@ -262,8 +262,10 @@ class EnergySaveManager:
                 # Trigger photo sync during sleep
                 syncer = self.app.syncer if self.app else None
                 if syncer:
-                    logger.info("Sleep: triggering photo sync")
-                    syncer.run_sync()
+                    logger.info("Sleep: triggering photo sync (videos at full power)")
+                    # Display is off during sleep → transcode videos now, using
+                    # all cores at normal priority.
+                    syncer.run_sync(allow_videos=True, full_power=True)
                 else:
                     logger.warning("Sleep: syncer not initialized, skipping sync")
             elif not sleep and self.sleeping:
