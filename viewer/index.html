@@ -99,7 +99,26 @@
         }
 
         #hot-corner.holding {
-            background: linear-gradient(to bottom left, rgba(255,255,255,0.18), transparent 70%);
+            background: radial-gradient(circle at top right,
+                rgba(255,255,255,0.20), transparent 72%);
+        }
+        /* Soft glow that spreads further down and left than the 200px touch
+         * area, so the hold feedback reads as a corner glow rather than a
+         * hard half-square. */
+        #hot-corner.holding::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 380px;
+            height: 380px;
+            background: radial-gradient(circle at top right,
+                rgba(255,255,255,0.22) 0%,
+                rgba(255,255,255,0.10) 30%,
+                rgba(255,255,255,0.03) 52%,
+                transparent 72%);
+            pointer-events: none;
+            z-index: 999;
         }
 
         /* Always-visible faint corner hint so users know where to tap */
@@ -695,6 +714,8 @@
                     <span class="info-value" id="info-disk">--</span>
                     <span class="info-label">Photos:</span>
                     <span class="info-value" id="info-photos">--</span>
+                    <span class="info-label">Videos:</span>
+                    <span class="info-value" id="info-videos">--</span>
                     <span class="info-label">Sync:</span>
                     <span class="info-value" id="info-sync">--</span>
                 </div>
@@ -921,6 +942,7 @@
                 cpu_temp: 'CPU Temp:',
                 disk: 'Disk:',
                 photos: 'Photos:',
+                videos: 'Videos:',
                 sync: 'Sync:',
                 language: 'Language',
                 orientation: 'Orientation',
@@ -982,6 +1004,7 @@
                 cpu_temp: 'CPU Temp:',
                 disk: 'Speicher:',
                 photos: 'Fotos:',
+                videos: 'Videos:',
                 sync: 'Sync:',
                 language: 'Sprache',
                 orientation: 'Ausrichtung',
@@ -1048,7 +1071,7 @@
             // Main page
             document.querySelector('#settings-main > h1').textContent = t('settings');
             var labels = document.querySelectorAll('#settings-main .info-label');
-            var labelKeys = ['hostname','ip','tailscale','wifi','cpu_temp','disk','photos','sync'];
+            var labelKeys = ['hostname','ip','tailscale','wifi','cpu_temp','disk','photos','videos','sync'];
             labels.forEach(function(el, i) { if (labelKeys[i]) el.textContent = t(labelKeys[i]); });
             var mainBtns = document.querySelectorAll('#settings-main .settings-buttons .settings-btn');
             mainBtns[0].innerHTML = '&#x1F504; ' + t('sync_now');
@@ -1526,6 +1549,7 @@
                 document.getElementById('info-temp').textContent = info.cpu_temp != null ? info.cpu_temp + ' C' : '--';
                 document.getElementById('info-disk').textContent = info.disk || '--';
                 document.getElementById('info-photos').textContent = info.photo_count || '0';
+                document.getElementById('info-videos').textContent = info.video_count || '0';
                 // Touchscreen warning
                 var touchWarn = document.getElementById('touch-warning');
                 if (touchWarn) touchWarn.style.display = info.touchscreen === false ? '' : 'none';
@@ -2097,29 +2121,30 @@
             }
         });
 
-        // Handle touch events for navigation
-        let touchStartX = null;
-        let touchStartY = null;
-        let touchStartTime = 0;
+        // Handle swipe navigation via Pointer Events. These fire uniformly for
+        // touch, pen AND mouse/absolute-pointer devices — our USB touch panel
+        // (wch.cn) enumerates as a pointer, so touch-only listeners never fired.
+        let swipeStartX = null;
+        let swipeStartY = null;
+        let swipeStartTime = 0;
 
-        document.addEventListener('touchstart', (e) => {
-            if (e.touches.length === 1) {
-                touchStartX = e.touches[0].clientX;
-                touchStartY = e.touches[0].clientY;
-                touchStartTime = Date.now();
-            }
+        document.addEventListener('pointerdown', (e) => {
+            if (!e.isPrimary) return;
+            // Don't treat interactions inside the settings overlay as swipes
+            if (document.getElementById('settings-overlay').classList.contains('visible')) return;
+            swipeStartX = e.clientX;
+            swipeStartY = e.clientY;
+            swipeStartTime = Date.now();
         });
 
-        document.addEventListener('touchend', (e) => {
-            if (touchStartX === null) return;
-            const elapsed = Date.now() - touchStartTime;
+        document.addEventListener('pointerup', (e) => {
+            if (swipeStartX === null) return;
+            const elapsed = Date.now() - swipeStartTime;
+            const diffX = swipeStartX - e.clientX;
+            const diffY = Math.abs(swipeStartY - e.clientY);
+            swipeStartX = null;
             // Ignore if too slow (>1.5s) — probably not a swipe
-            if (elapsed > 1500) { touchStartX = null; return; }
-
-            const touchEndX = e.changedTouches[0].clientX;
-            const touchEndY = e.changedTouches[0].clientY;
-            const diffX = touchStartX - touchEndX;
-            const diffY = Math.abs(touchStartY - touchEndY);
+            if (elapsed > 1500) return;
 
             // Only register horizontal swipes (X movement > Y movement)
             if (Math.abs(diffX) > 50 && Math.abs(diffX) > diffY) {
@@ -2129,8 +2154,9 @@
                     showPrevPhoto();
                 }
             }
-            touchStartX = null;
         });
+
+        document.addEventListener('pointercancel', () => { swipeStartX = null; });
 
         // Sleep mode: poll server, show black overlay when sleeping
         const sleepOverlay = document.getElementById('sleep-overlay');

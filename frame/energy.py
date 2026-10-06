@@ -78,9 +78,14 @@ class SysinfoCache:
         v_dir = self.photos_base / 'vertical'
         h_count = len(list(h_dir.glob('*.jpg'))) if h_dir.exists() else 0
         v_count = len(list(v_dir.glob('*.jpg'))) if v_dir.exists() else 0
+        h_videos = len(list(h_dir.glob('*.mp4'))) if h_dir.exists() else 0
+        v_videos = len(list(v_dir.glob('*.mp4'))) if v_dir.exists() else 0
         info['h_photos'] = h_count
         info['v_photos'] = v_count
+        info['h_videos'] = h_videos
+        info['v_videos'] = v_videos
         info['photo_count'] = f"H: {h_count} / V: {v_count}"
+        info['video_count'] = f"H: {h_videos} / V: {v_videos}"
         # Touchscreen detection
         try:
             result = subprocess.run(
