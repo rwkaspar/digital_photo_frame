@@ -7,6 +7,8 @@ import subprocess
 from pathlib import Path
 from typing import Tuple, Optional
 
+from frame.hardware import transcode_profile
+
 logger = logging.getLogger(__name__)
 
 VIDEO_EXTENSIONS = {'.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi', '.wmv', '.3gp'}
@@ -149,9 +151,14 @@ def transcode_video(source_path: Path, output_dir: Path,
     stem = Path(filename).stem
     out_name = f"{item_id}_{stem}.mp4"
     h_fn = v_fn = None
-    # Pi Zero 2W has 425MB RAM — running with -threads 1 keeps memory
-    # bounded (libx264 with multiple threads buffers extra frames per thread).
-    threads = '1'
+    # Adapt to the host board. On a RAM-constrained Pi Zero this stays at one
+    # thread (libx264 buffers extra frames per thread) with a pre-scale pass
+    # and conservative caps; on a Pi 4/5 it uses all cores, one pass and
+    # higher quality. See frame/hardware.py.
+    hw = transcode_profile()
+    threads = str(hw['threads'])
+    logger.info(f"Transcode profile: {hw['mem_mb']}MB RAM, {hw['cores']} cores "
+                f"-> threads={threads}, crf={hw['crf']}, pre_scale={hw['pre_scale']}")
 
     # PASS 1: if source is large (4K HEVC, etc.), pre-scale to 1080p H.264
     # FIRST. Without this, the filter_complex blur-fill pass has to allocate
@@ -159,7 +166,7 @@ def transcode_video(source_path: Path, output_dir: Path,
     # the Pi. The intermediate is small (~5MB), the second pass operates on
     # cheap H.264 frames.
     PRE_SCALE_TARGET = 1080
-    if max(src_w, src_h) > PRE_SCALE_TARGET:
+    if hw['pre_scale'] and max(src_w, src_h) > PRE_SCALE_TARGET:
         intermediate = source_path.parent / f"_scaled_{item_id}.mp4"
         scale_filter = (f"scale={PRE_SCALE_TARGET}:-2:"
                         f"force_original_aspect_ratio=decrease")
@@ -205,15 +212,17 @@ def transcode_video(source_path: Path, output_dir: Path,
         else:
             cmd += ['-vf', filter_str]
         cmd += [
-            '-r', '30',  # cap output framerate — Pi Zero can't decode 60fps H.264 smoothly
+            # Cap framerate so playback stays smooth on the target board
+            # (30 on a Pi Zero, 60 on a Pi 4/5).
+            '-r', str(hw['fps_cap']),
             '-c:v', 'libx264',
             '-profile:v', 'baseline',
-            '-level', '4.0',
+            '-level', hw['level'],
             '-pix_fmt', 'yuv420p',
             '-preset', 'ultrafast',
-            '-crf', '28',
-            '-maxrate', '2500k',
-            '-bufsize', '5000k',
+            '-crf', str(hw['crf']),
+            '-maxrate', f"{hw['maxrate_k']}k",
+            '-bufsize', f"{hw['bufsize_k']}k",
             '-x264-params', f'threads={threads}',
             # Fragmented MP4: each fragment is self-contained, so a partial
             # file from a SIGKILLed ffmpeg is still playable up to the last

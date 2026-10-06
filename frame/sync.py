@@ -16,6 +16,7 @@ from frame.clients import (SynologyPhotosClient, GooglePhotosClient, ImmichClien
 from frame.database import PhotoDatabase
 from frame.processing import process_photo_in_subprocess
 from frame.video import transcode_video_in_subprocess
+from frame.hardware import transcode_profile
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +144,9 @@ class PhotoSyncer:
         video_max_duration = video_config.get('max_duration', 120)
         video_max_filesize_mb = video_config.get('max_filesize_mb', 100)
         videos_enabled = video_config.get('enabled', True)
+        # Only free RAM by stopping the kiosk on memory-constrained boards
+        # (Pi Zero). On a Pi 4/5 there is ample RAM, so leave the display up.
+        stop_cage_for_video = transcode_profile()['stop_cage']
 
         # Ensure directories
         (base_dir / 'horizontal').mkdir(parents=True, exist_ok=True)
@@ -464,7 +468,8 @@ class PhotoSyncer:
                         continue
                     # Free RAM for ffmpeg by stopping Chromium kiosk during
                     # the first video transcode; restored at end of sync.
-                    if not cage_stopped_for_video:
+                    # Skipped on roomy boards (see stop_cage_for_video).
+                    if stop_cage_for_video and not cage_stopped_for_video:
                         try:
                             logger.info("Stopping cage to free RAM for video transcoding")
                             subprocess.run(['sudo', 'systemctl', 'stop',
