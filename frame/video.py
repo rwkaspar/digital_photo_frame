@@ -309,6 +309,12 @@ def _transcode_worker(source_path, output_dir, item_id, filename,
             f.write('800')
     except OSError:
         pass
+    # Run at low CPU priority so Chromium keeps the display and touch UI
+    # responsive while ffmpeg encodes (child ffmpeg inherits the niceness).
+    try:
+        os.nice(15)
+    except OSError:
+        pass
     result = transcode_video(
         Path(source_path), Path(output_dir), item_id, filename,
         h_size, v_size, blur_radius,

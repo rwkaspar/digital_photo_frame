@@ -50,7 +50,9 @@ def transcode_profile() -> dict:
         'low_memory': low,
         'mem_mb': mem,
         'cores': cores,
-        'threads': 1 if low else min(cores, 4),
+        # Leave a core free for Chromium so the UI (swipe/settings) stays
+        # responsive while a transcode runs; the Pi Zero path stays at 1.
+        'threads': 1 if low else max(1, min(cores - 1, 4)),
         'stop_cage': low,      # free RAM for Chromium only when it is scarce
         'pre_scale': low,      # extra down-scale pass only when memory-bound
         'crf': 28 if low else 23,
