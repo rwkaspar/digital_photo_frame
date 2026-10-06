@@ -27,6 +27,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Free up disk space
+        # Reliable replacement for pi-gen-action's built-in disk cleanup
+        # (increase-runner-disk-size), which fails on current runners with
+        # "sudo failed with exit code 100". Frees ~25-30 GB.
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: false
+
       - name: Pin app repo + ref into the bake script
         # pi-gen runs the install step inside a chroot where workflow env vars
         # are not visible, so bake the values into the script on the host first.
@@ -63,7 +77,7 @@ jobs:
           locale: de_DE.UTF-8
           keyboard-keymap: de
           keyboard-layout: German
-          increase-runner-disk-size: true
+          increase-runner-disk-size: false
           verbose-output: true
 
       - name: Upload image artifact
