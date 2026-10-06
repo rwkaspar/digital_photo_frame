@@ -51,6 +51,7 @@ class PhotoSyncer:
         self._progress = {}
         self._last_error = None
         self._thread = None
+        self._restart_requested = False
 
     def run_sync(self):
         """Start a sync in a background thread. No-op if already running."""
@@ -68,6 +69,24 @@ class PhotoSyncer:
     def stop(self):
         """Request the running sync to stop."""
         self._stop_event.set()
+
+    def restart(self):
+        """Interrupt any in-progress sync and start a fresh one with the
+        current config.
+
+        Used when the configured albums change: the running sync may be
+        downloading an album the user just removed. If a sync is running we
+        ask it to stop and flag a restart — the worker relaunches a fresh sync
+        from its own shutdown path as soon as it reaches an interruptible point
+        (a non-interruptible step like a video transcode may take a while).
+        This never blocks, so it is safe to call from the request thread.
+        """
+        with self._lock:
+            if self._running:
+                self._restart_requested = True
+                self._stop_event.set()
+                return
+        self.run_sync()
 
     def get_status(self) -> dict:
         """Return current sync status, including pending count from DB when idle."""
@@ -324,6 +343,23 @@ class PhotoSyncer:
                         (base_dir / 'vertical' / v_fn).unlink(missing_ok=True)
                 logger.info(f"Cleaned {len(stale_files)} stale photo files")
 
+            # Sweep orphan files: anything on disk not referenced by the DB —
+            # e.g. a truncated .mp4 left behind by a killed transcode — would
+            # otherwise be served as a broken (black) slide. This runs before
+            # Phase 3, so files we are about to (re)create don't exist yet and
+            # valid previously-processed files are all tracked in the DB.
+            known_files = db.get_all_media_filenames()
+            orphan_count = 0
+            for orient in ('horizontal', 'vertical'):
+                for f in _list_media(base_dir / orient):
+                    if f.name.startswith('default_'):
+                        continue
+                    if f.name not in known_files:
+                        f.unlink(missing_ok=True)
+                        orphan_count += 1
+            if orphan_count:
+                logger.info(f"Removed {orphan_count} orphan media file(s) not tracked in DB")
+
             # --- Phase 3: Download and process new photos ---
             self._set_phase('downloading')
 
@@ -513,6 +549,13 @@ class PhotoSyncer:
                     logger.warning(f"Failed to restart cage: {e}")
             with self._lock:
                 self._running = False
+                relaunch = self._restart_requested
+                self._restart_requested = False
+        # Relaunch outside the lock (run_sync acquires it) when an album change
+        # asked for a fresh sync while this one was still running.
+        if relaunch:
+            logger.info("Album config changed during sync — restarting with new album set")
+            self.run_sync()
 
     def _restore_defaults(self, base_dir: Path):
         """Restore default placeholder photos if no real photos exist."""

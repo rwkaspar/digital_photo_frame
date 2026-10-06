@@ -77,20 +77,24 @@ class GooglePhotosClient:
 
         # Extract lh3 photo/video URLs from the structured data.
         # Each entry looks like: ["ID",["https://lh3...com/pw/HASH",WIDTH,HEIGHT,...
-        # Videos have a [null,DURATION_MS,...] block after the image metadata.
-        # We capture each entry's full preamble (~600 chars) to test for video markers.
-        entry_pattern = r'\["([^"]{10,})",\["(https://lh3\.googleusercontent\.com/[^"]+)",(\d+),(\d+)([^\[]{0,600})'
-        matches = re.findall(entry_pattern, data_str)
+        # followed by a per-entry metadata dict. Video entries carry Google's
+        # video-metadata key "76647426" (duration + a direct stream URL); photo
+        # entries carry "101428965" instead. We detect videos by that key within
+        # the window of data belonging to the entry (bounded by the next entry
+        # start so a photo never picks up a neighbouring video's marker).
+        entry_pattern = r'\["([^"]{10,})",\["(https://lh3\.googleusercontent\.com/[^"]+)",(\d+),(\d+)'
+        entries = list(re.finditer(entry_pattern, data_str))
 
         items = []
         seen = set()
-        for photo_id, url, width, height, tail in matches:
+        for idx, m in enumerate(entries):
+            photo_id, url, width, height = m.group(1), m.group(2), m.group(3), m.group(4)
             if url in seen:
                 continue
             seen.add(url)
-            # Heuristic: a video entry has a nested array with a duration value
-            # like [null,12345,...] (duration in ms) shortly after the image meta.
-            is_video = bool(re.search(r'\[null,\d{3,7},', tail))
+            window_end = entries[idx + 1].start() if idx + 1 < len(entries) else len(data_str)
+            window = data_str[m.end():window_end]
+            is_video = '76647426' in window
             url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
             if is_video:
                 # =dv yields the highest-res mp4 download (Google Photos video format)

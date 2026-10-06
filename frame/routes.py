@@ -754,6 +754,19 @@ class PhotoFrameHandler(SimpleHTTPRequestHandler):
             data = {'ok': False, 'message': 'Syncer not initialized'}
         self._json_response(data)
 
+    def _restart_sync_for_album_change(self):
+        """(Re)start sync so a changed album set takes effect immediately.
+
+        Interrupts any in-progress sync (e.g. of an album the user just
+        removed) and relaunches with the current config. The stale-file
+        reconciliation in the sync worker then removes photos of dropped
+        albums. restart() is non-blocking (it flags a restart and the worker
+        relaunches itself when it stops), so this returns immediately.
+        """
+        if self.app.syncer is None:
+            self.app.init_syncer()
+        self.app.syncer.restart()
+
     def handle_save_synology_config(self):
         """Save Synology share URLs and passphrases to config."""
         content_length = int(self.headers.get('Content-Length', 0))
@@ -772,10 +785,7 @@ class PhotoFrameHandler(SimpleHTTPRequestHandler):
             self.app.config['synology']['share_passphrases'] = passphrases
             self.app.save_config()
 
-            # Create syncer if it didn't exist before and we now have URLs
-            if self.app.syncer is None and any(urls):
-                from frame.sync import PhotoSyncer
-                self.app.syncer = PhotoSyncer(self.app.config)
+            self._restart_sync_for_album_change()
 
             self._json_response({'ok': True})
             logger.info(f"Synology config saved: {len(urls)} album(s)")
@@ -797,9 +807,7 @@ class PhotoFrameHandler(SimpleHTTPRequestHandler):
             self.app.config['google_photos']['share_urls'] = urls
             self.app.save_config()
 
-            if self.app.syncer is None and any(urls):
-                from frame.sync import PhotoSyncer
-                self.app.syncer = PhotoSyncer(self.app.config)
+            self._restart_sync_for_album_change()
 
             self._json_response({'ok': True})
             logger.info(f"Google Photos config saved: {len(urls)} album(s)")
@@ -825,9 +833,7 @@ class PhotoFrameHandler(SimpleHTTPRequestHandler):
             self.app.config['immich']['share_passphrases'] = passphrases
             self.app.save_config()
 
-            if self.app.syncer is None and any(urls):
-                from frame.sync import PhotoSyncer
-                self.app.syncer = PhotoSyncer(self.app.config)
+            self._restart_sync_for_album_change()
 
             self._json_response({'ok': True})
             logger.info(f"Immich config saved: {len(urls)} album(s)")
@@ -849,9 +855,7 @@ class PhotoFrameHandler(SimpleHTTPRequestHandler):
             self.app.config['icloud']['share_urls'] = urls
             self.app.save_config()
 
-            if self.app.syncer is None and any(urls):
-                from frame.sync import PhotoSyncer
-                self.app.syncer = PhotoSyncer(self.app.config)
+            self._restart_sync_for_album_change()
 
             self._json_response({'ok': True})
             logger.info(f"iCloud config saved: {len(urls)} album(s)")
@@ -877,9 +881,7 @@ class PhotoFrameHandler(SimpleHTTPRequestHandler):
             self.app.config['nextcloud']['share_passphrases'] = passphrases
             self.app.save_config()
 
-            if self.app.syncer is None and any(urls):
-                from frame.sync import PhotoSyncer
-                self.app.syncer = PhotoSyncer(self.app.config)
+            self._restart_sync_for_album_change()
 
             self._json_response({'ok': True})
             logger.info(f"Nextcloud config saved: {len(urls)} album(s)")

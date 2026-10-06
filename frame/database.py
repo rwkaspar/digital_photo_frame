@@ -117,7 +117,20 @@ class PhotoDatabase:
                     last_seen = excluded.last_seen,
                     filename = excluded.filename,
                     filesize = excluded.filesize,
-                    media_type = excluded.media_type
+                    media_type = excluded.media_type,
+                    -- If an item's type flips (e.g. a Google Photos entry we
+                    -- first misread as a photo is now correctly a video),
+                    -- reset its processing state so it is re-downloaded and
+                    -- re-encoded. The now-unreferenced old output is removed
+                    -- by the orphan sweep on the same sync.
+                    downloaded = CASE WHEN photos.media_type IS NOT excluded.media_type
+                                      THEN 0 ELSE photos.downloaded END,
+                    h_filename = CASE WHEN photos.media_type IS NOT excluded.media_type
+                                      THEN NULL ELSE photos.h_filename END,
+                    v_filename = CASE WHEN photos.media_type IS NOT excluded.media_type
+                                      THEN NULL ELSE photos.v_filename END,
+                    download_failed = CASE WHEN photos.media_type IS NOT excluded.media_type
+                                           THEN 0 ELSE photos.download_failed END
             ''', (
                 item['id'],
                 item.get('filename', ''),
@@ -238,6 +251,23 @@ class PhotoDatabase:
         cursor.execute('SELECT COUNT(*) as pending FROM photos WHERE downloaded = 0 AND download_failed < 3')
         pending = cursor.fetchone()['pending']
         return {'total': total, 'downloaded': done, 'pending': pending}
+
+    def get_all_media_filenames(self) -> set:
+        """Return every processed output filename referenced in the DB.
+
+        Used by the sync to sweep orphan files — e.g. a partial .mp4 left
+        behind by a killed transcode — that are no longer, or never were,
+        tracked and would otherwise be served as a broken slide.
+        """
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT h_filename, v_filename FROM photos')
+        names = set()
+        for row in cursor.fetchall():
+            if row['h_filename']:
+                names.add(row['h_filename'])
+            if row['v_filename']:
+                names.add(row['v_filename'])
+        return names
 
     def get_last_run(self) -> Optional[Dict[str, Any]]:
         """Get the most recent sync run info."""

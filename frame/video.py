@@ -264,6 +264,17 @@ def transcode_video(source_path: Path, output_dir: Path,
                 out_path.unlink(missing_ok=True)
                 return None
 
+            # Validate output: a killed/stalled ffmpeg can exit 0 yet leave a
+            # tiny header-only file (e.g. 28 bytes) that plays as a black frame.
+            # Reject anything implausibly small for a transcoded clip.
+            MIN_VIDEO_BYTES = 10 * 1024
+            actual = out_path.stat().st_size if out_path.exists() else 0
+            if actual < MIN_VIDEO_BYTES:
+                logger.error(f"Transcode output too small for {filename} "
+                             f"({orient}): {actual} bytes — discarding")
+                out_path.unlink(missing_ok=True)
+                return None
+
             if orient == 'horizontal':
                 h_fn = out_name
             else:
