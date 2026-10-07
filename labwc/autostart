@@ -1,25 +1,8 @@
-# Detect repo dir from XDG_CONFIG_HOME (set by systemd service)
-REPO_DIR="${XDG_CONFIG_HOME:-$(cd "$(dirname "$0")/.." && pwd)}"
-CONFIG="${REPO_DIR}/config_frame.yaml"
-
-# Apply display rotation from config
-ORIENTATION=$(python3 -c "
-try:
-    import yaml
-    with open('${CONFIG}') as f:
-        print(yaml.safe_load(f).get('frame',{}).get('orientation','horizontal'))
-except:
-    # Fallback: grep config file directly (no PyYAML needed)
-    import re
-    try:
-        text = open('${CONFIG}').read()
-        m = re.search(r'orientation:\s*(\w+)', text)
-        print(m.group(1) if m else 'horizontal')
-    except: print('horizontal')
-" 2>/dev/null)
-if [ "$ORIENTATION" = "vertical" ]; then
-    wlr-randr --output HDMI-A-1 --transform 90
-fi
+# Orientation (vertical) is handled by rotating the web UI in the browser via
+# CSS, NOT by rotating the display here. The panel stays in its native
+# landscape mode so touch input is 1:1 and the browser can hit-test the
+# rotated layout correctly — our USB touch panel ignores compositor/udev
+# rotation. (See viewer/index.html .rotate-left.)
 
 /usr/lib/chromium/chromium \
     --kiosk \

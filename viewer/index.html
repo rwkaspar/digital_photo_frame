@@ -17,9 +17,32 @@
             touch-action: none;
         }
         html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
             overscroll-behavior: none;
             -webkit-user-select: none;
             user-select: none;
+        }
+
+        /* Vertical orientation is done by rotating the whole UI in the browser
+         * (display stays in its native landscape mode, touch 1:1). The browser
+         * then hit-tests against the rotated layout, so taps/swipes land
+         * correctly — unlike a compositor/udev rotation, which our USB touch
+         * panel ignores. Full-screen children use 100% (not 100vw/100vh) so
+         * they size against the rotated <body>, which a transform turns into
+         * the containing block for fixed descendants.
+         * Direction: 90° counter-clockwise (left). For the other direction use
+         *   transform: translateX(100vw) rotate(90deg);
+         */
+        html.rotate-left body {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vh;
+            height: 100vw;
+            transform-origin: top left;
+            transform: translateY(100vh) rotate(-90deg);
         }
 
         body {
@@ -32,8 +55,8 @@
             position: fixed;
             top: 0;
             left: 0;
-            width: 100vw;
-            height: 100vh;
+            width: 100%;
+            height: 100%;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -67,8 +90,8 @@
             position: absolute;
             top: 0;
             left: 0;
-            width: 100vw;
-            height: 100vh;
+            width: 100%;
+            height: 100%;
             max-width: none;
             max-height: none;
             overflow: hidden;
@@ -227,8 +250,8 @@
             position: fixed;
             top: 0;
             left: 0;
-            width: 100vw;
-            height: 100vh;
+            width: 100%;
+            height: 100%;
             background: #000;
             z-index: 1500;
             display: none;
@@ -243,8 +266,8 @@
             position: fixed;
             top: 0;
             left: 0;
-            width: 100vw;
-            height: 100vh;
+            width: 100%;
+            height: 100%;
             background: rgba(0, 0, 0, 0.95);
             z-index: 2000;
             color: #eee;
@@ -605,8 +628,8 @@
             position: fixed;
             top: 0;
             left: 0;
-            width: 100vw;
-            height: 100vh;
+            width: 100%;
+            height: 100%;
             background: rgba(0, 0, 0, 0.8);
             z-index: 2500;
         }
@@ -661,8 +684,8 @@
             position: fixed;
             top: 0;
             left: 0;
-            width: 100vw;
-            height: 100vh;
+            width: 100%;
+            height: 100%;
             background: rgba(0, 0, 0, 0.95);
             z-index: 3000;
             flex-direction: column;
@@ -693,6 +716,13 @@
             margin-top: 16px;
         }
     </style>
+    <script>
+        // Apply the saved orientation rotation before first paint to avoid a
+        // landscape flash on load (loadOrientation() later confirms from server).
+        if (localStorage.getItem('frame-orientation') === 'vertical') {
+            document.documentElement.classList.add('rotate-left');
+        }
+    </script>
 </head>
 <body>
     <div id="loading"></div>
@@ -1676,6 +1706,9 @@
         function updateOrientationUI(orientation) {
             document.getElementById('orient-h').classList.toggle('active', orientation === 'horizontal');
             document.getElementById('orient-v').classList.toggle('active', orientation === 'vertical');
+            // Rotate the whole UI in the browser for vertical (see CSS).
+            document.documentElement.classList.toggle('rotate-left', orientation === 'vertical');
+            localStorage.setItem('frame-orientation', orientation);
         }
 
         async function setOrientation(orientation) {
@@ -1829,6 +1862,13 @@
         // Load config and photos, then start
         async function init() {
             try {
+                // Apply the current orientation from the server on every load
+                // (rotates the UI for vertical). Without this the page kept the
+                // previously-rendered orientation after a restart until the
+                // settings menu was opened. The early <head> script handles the
+                // instant render from localStorage; this corrects/syncs it.
+                loadOrientation();
+
                 // Load slideshow config from server
                 const cfgResp = await fetch('/config');
                 if (cfgResp.ok) {
@@ -2150,8 +2190,19 @@
         document.addEventListener('pointerup', (e) => {
             if (swipeStartX === null) return;
             const elapsed = Date.now() - swipeStartTime;
-            const diffX = swipeStartX - e.clientX;
-            const diffY = Math.abs(swipeStartY - e.clientY);
+            // Pointer coords are in the (unrotated) viewport. When the UI is
+            // CSS-rotated 90° left for vertical orientation, a visually
+            // horizontal swipe is a vertical move in viewport space, so map the
+            // axes accordingly. diffX = movement along the VISUAL horizontal
+            // (positive = swipe left = next).
+            let diffX, diffY;
+            if (document.documentElement.classList.contains('rotate-left')) {
+                diffX = e.clientY - swipeStartY;
+                diffY = Math.abs(e.clientX - swipeStartX);
+            } else {
+                diffX = swipeStartX - e.clientX;
+                diffY = Math.abs(swipeStartY - e.clientY);
+            }
             swipeStartX = null;
             // Ignore if too slow (>1.5s) — probably not a swipe
             if (elapsed > 1500) return;

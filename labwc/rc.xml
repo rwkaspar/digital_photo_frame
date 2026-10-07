@@ -10,7 +10,15 @@
     <default />
   </keyboard>
   <libinput>
+    <!-- Map the touch panel to the HDMI output so its coordinates follow the
+         output transform (rotation) set via wlr-randr. The generic "touch"
+         category is not enough for our USB panel: libinput classifies it as a
+         pointer (it exposes a mouse interface), so we also map it by device
+         name to be sure the mapping applies. -->
     <device category="touch">
+      <mapToOutput>HDMI-A-1</mapToOutput>
+    </device>
+    <device category="wch.cn TouchScreen">
       <mapToOutput>HDMI-A-1</mapToOutput>
     </device>
   </libinput>

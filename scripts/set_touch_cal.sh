@@ -1,33 +1,17 @@
 #!/bin/bash
-# Set touchscreen calibration matrix based on orientation config.
-# Must run as root BEFORE labwc starts (ExecStartPre=+).
+# Touch rotation is handled by the compositor (labwc mapToOutput in rc.xml +
+# the wlr-randr output transform in labwc/autostart), NOT by a libinput
+# calibration matrix. An earlier approach wrote a LIBINPUT_CALIBRATION_MATRIX
+# udev rule, but libinput classifies our USB panel as a pointer and ignores
+# the matrix, so it only ever conflicted with the compositor mapping.
+#
+# This script now just removes any leftover calibration rule so the two
+# mechanisms never fight. Kept as cage.service ExecStartPre.
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_DIR="$(dirname "$SCRIPT_DIR")"
-CONFIG="${REPO_DIR}/config_frame.yaml"
 RULES_FILE=/etc/udev/rules.d/99-touchscreen-cal.rules
 
-ORIENTATION=$(python3 -c "
-try:
-    import yaml
-    with open('$CONFIG') as f:
-        print(yaml.safe_load(f).get('frame',{}).get('orientation','horizontal'))
-except:
-    import re
-    try:
-        text = open('$CONFIG').read()
-        m = re.search(r'orientation:\s*(\w+)', text)
-        print(m.group(1) if m else 'horizontal')
-    except: print('horizontal')
-" 2>/dev/null)
-
-if [ "$ORIENTATION" = "vertical" ]; then
-    # Calibration matrix for 90° display rotation
-    echo 'ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{LIBINPUT_CALIBRATION_MATRIX}="0 -1 1 1 0 0"' > "$RULES_FILE"
-else
-    # Normal — remove any custom calibration
+if [ -f "$RULES_FILE" ]; then
     rm -f "$RULES_FILE"
+    udevadm control --reload-rules
+    udevadm trigger
 fi
-
-udevadm control --reload-rules
-udevadm trigger
