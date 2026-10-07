@@ -108,6 +108,8 @@ class PhotoFrameHandler(SimpleHTTPRequestHandler):
             self.handle_wake()
         elif self.path == '/orientation':
             self.handle_save_orientation()
+        elif self.path == '/brightness':
+            self.handle_set_brightness()
         elif self.path == '/sync/trigger':
             self.handle_sync_trigger()
         elif self.path == '/api/interval':
@@ -325,6 +327,33 @@ class PhotoFrameHandler(SimpleHTTPRequestHandler):
         """Serve cached system info as JSON (updated every 30s in background)."""
         info = self.app.sysinfo_cache.get() if self.app and self.app.sysinfo_cache else {}
         self._json_response(info)
+
+    def handle_set_brightness(self):
+        """Set the display backlight brightness via DDC/CI (VCP 10).
+
+        Done in hardware so the whole screen dims — including the settings
+        overlay — rather than a CSS filter that only dimmed the slideshow.
+        ddcutil is slow (~0.5s), so apply it off the request thread; the
+        viewer debounces slider changes.
+        """
+        content_length = int(self.headers.get('Content-Length', 0))
+        body = self.rfile.read(content_length)
+        try:
+            data = json.loads(body)
+            value = max(0, min(100, int(data.get('value', 100))))
+
+            def _apply():
+                try:
+                    subprocess.run(['sudo', 'ddcutil', 'setvcp', '10', str(value)],
+                                   capture_output=True, timeout=10)
+                except Exception as e:
+                    logger.warning(f"Failed to set brightness: {e}")
+
+            threading.Thread(target=_apply, daemon=True).start()
+            self._json_response({'ok': True, 'value': value})
+        except Exception as e:
+            logger.error(f"Error setting brightness: {e}")
+            self._json_response({'ok': False, 'error': str(e)}, 400)
 
     def serve_brightness(self):
         """Serve auto brightness value from ambient light sensor."""

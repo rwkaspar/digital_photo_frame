@@ -10,6 +10,9 @@ SupplementaryGroups=video input render
 TTYPath=/dev/tty1
 Environment="XDG_RUNTIME_DIR=/tmp/frame-runtime"
 Environment="XDG_CONFIG_HOME=/home/robert/digital_photo_frame"
+Environment="XCURSOR_PATH=/home/robert/digital_photo_frame/labwc/icons"
+Environment="XCURSOR_THEME=empty"
+Environment="XCURSOR_SIZE=1"
 ExecStartPre=/bin/mkdir -p /tmp/frame-runtime
 ExecStartPre=/bin/chmod 700 /tmp/frame-runtime
 ExecStartPre=/bin/sleep 5
