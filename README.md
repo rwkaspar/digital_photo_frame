@@ -62,7 +62,30 @@ Raspberry Pi Zero 2 W
 
 ## Setup
 
-### SD Card Preparation (recommended)
+Flashing the ready-made image (Option A) is the easiest path. Use Option B/C
+only if you want to build from source.
+
+> 🇩🇪 Eine deutsche Kurzanleitung gibt es in [ANLEITUNG.md](ANLEITUNG.md).
+
+### Option A — Flash the ready-made image (recommended)
+
+1. Download the latest `digital-photo-frame-*.img.xz` from the
+   [Releases page](https://github.com/rwkaspar/digital_photo_frame/releases).
+2. Flash it with [Raspberry Pi Imager](https://www.raspberrypi.com/software/):
+   *Choose OS → Use custom* → pick the `.img.xz`. In the customization dialog
+   set your **WiFi**, **locale/timezone**, and enable **SSH** if you want
+   remote access — these still apply on top of the image.
+3. Insert the card and power on. The first boot provisions itself (a few
+   minutes) and then shows the setup wizard.
+4. Configure your photo albums via the on-screen wizard — or, if no network
+   was set, connect to the **`PhotoFrame-Setup`** WiFi hotspot it creates and
+   follow the captive portal.
+
+- **Target:** 64-bit (arm64), **Raspberry Pi Zero 2 W or newer**.
+- **Login:** user `frame`, password `photoframe` — change it after first login
+  (`passwd`). If SSH is enabled, reach it at `photoframe.local`.
+
+### Option B — Prepare an SD card from source
 
 Works on **Windows**, **macOS**, and **Linux** — no ext4 access needed.
 
@@ -108,7 +131,7 @@ Works on **Windows**, **macOS**, and **Linux** — no ext4 access needed.
    ssh frame_user@<pi-ip> journalctl -fu photo-frame-firstboot
    ```
 
-### Manual Setup (alternative)
+### Option C — Manual setup on the Pi
 
 If you prefer to set up directly on the Pi:
 
@@ -305,7 +328,7 @@ sudo systemctl restart photo_frame_cage
 
 This project is open source and available under the MIT License.
 
-## Building a ready-to-flash image
+## Building the image (maintainers)
 
 A GitHub Actions workflow builds a 64-bit Raspberry Pi OS image with the photo
 frame pre-installed, so you can flash it straight from Raspberry Pi Imager
