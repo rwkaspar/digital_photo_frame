@@ -49,4 +49,24 @@ UNIT
 
 systemctl enable photo-frame-bootstrap.service
 
-echo "photo-frame bake complete"
+# ---- Runtime trim: disable background services the frame doesn't need, so a
+# 512 MB Pi Zero 2 W keeps RAM/CPU for Chromium. avahi is kept on purpose
+# (hostname.local for SSH). NetworkManager is required (WiFi/hotspot).
+for unit in bluetooth hciuart triggerhappy ModemManager \
+            apt-daily.timer apt-daily-upgrade.timer \
+            man-db.timer fstrim.timer; do
+    systemctl disable "$unit" 2>/dev/null || true
+    systemctl mask "$unit" 2>/dev/null || true
+done
+
+# ---- zram swap: a compressed RAM swap gives the Zero headroom against OOM
+# without hammering the SD card.
+cat > /etc/default/zramswap <<'ZRAM'
+# Compressed RAM swap for low-memory boards (zram-tools).
+ALGO=lz4
+PERCENT=50
+PRIORITY=100
+ZRAM
+systemctl enable zramswap.service 2>/dev/null || true
+
+echo "photo-frame bake complete (runtime trims applied)"
