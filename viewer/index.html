@@ -1474,6 +1474,11 @@
                     document.getElementById('wifi-hotspot-view').style.display = 'block';
                     // Poll for WiFi reconnection
                     startWifiPoll();
+                } else {
+                    // Surface the failure instead of flipping to a hotspot
+                    // screen that isn't really up (then silently reverting).
+                    document.getElementById('wifi-status-value').textContent =
+                        data.error || 'Hotspot failed';
                 }
             } catch (e) {}
             btn.disabled = false;

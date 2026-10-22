@@ -36,12 +36,22 @@ class WiFiManager:
             return False
 
     def start_hotspot(self):
-        """Start WiFi hotspot with captive portal redirect."""
+        """Start WiFi hotspot with captive portal redirect.
+
+        Returns True on success, False otherwise.
+        """
         with self._lock:
             if self.mode == 'hotspot':
-                return
+                return True
             logger.info(f"Starting hotspot: {HOTSPOT_SSID}")
             try:
+                # Remove any leftover hotspot connection from a previous attempt
+                # — otherwise re-creating `con-name` fails ("already exists") and
+                # the hotspot never comes up, so reconfigure silently reverts.
+                subprocess.run(
+                    ['nmcli', 'connection', 'delete', HOTSPOT_CON_NAME],
+                    capture_output=True, timeout=10)
+
                 # Disconnect any existing WiFi first
                 subprocess.run(
                     ['nmcli', 'device', 'disconnect', 'wlan0'],
@@ -57,8 +67,16 @@ class WiFiManager:
                      'password', HOTSPOT_PASSWORD],
                     capture_output=True, text=True, timeout=15)
                 if result.returncode != 0:
-                    logger.error(f"Hotspot start failed: {result.stderr}")
-                    return
+                    logger.error(f"Hotspot start failed: {result.stderr.strip()}")
+                    return False
+
+                # Keep the hotspot active instead of letting NetworkManager
+                # auto-reconnect wlan0 to a known network a few seconds later.
+                subprocess.run(
+                    ['nmcli', 'connection', 'modify', HOTSPOT_CON_NAME,
+                     'connection.autoconnect', 'yes',
+                     'connection.autoconnect-priority', '100'],
+                    capture_output=True, timeout=10)
 
                 # Redirect port 80 -> 8080 for captive portal detection
                 subprocess.run(
@@ -69,8 +87,10 @@ class WiFiManager:
 
                 self.mode = 'hotspot'
                 logger.info("Hotspot started successfully")
+                return True
             except Exception as e:
                 logger.error(f"Failed to start hotspot: {e}")
+                return False
 
     def stop_hotspot(self):
         """Tear down hotspot and iptables rule."""
