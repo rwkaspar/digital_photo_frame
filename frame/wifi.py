@@ -68,6 +68,10 @@ class WiFiManager:
                     capture_output=True, text=True, timeout=15)
                 if result.returncode != 0:
                     logger.error(f"Hotspot start failed: {result.stderr.strip()}")
+                    # Don't leave wlan0 stranded (disconnected + no autoconnect).
+                    # Reconnect it so the frame stays reachable on its network.
+                    subprocess.run(['nmcli', 'device', 'connect', 'wlan0'],
+                                   capture_output=True, timeout=15)
                     return False
 
                 # Keep the hotspot active instead of letting NetworkManager
