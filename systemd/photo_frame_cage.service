@@ -2,6 +2,7 @@
 Description=Digital Photo Frame Viewer (labwc + Chromium)
 After=network.target photo_frame_server.service
 Wants=photo_frame_server.service
+Conflicts=display-manager.service
 
 [Service]
 Type=simple
